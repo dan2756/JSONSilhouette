@@ -42,6 +42,8 @@ type Field struct {
 	Key   string
 	Count int // objects that contained the key
 	Shape *Shape
+
+	seen int // Object.Count of the last object that counted this key
 }
 
 // Optional reports whether some of the objects lacked f.
@@ -131,7 +133,10 @@ func (s *Shape) addObject(dec *json.Decoder) error {
 			return fmt.Errorf("unexpected object key %v", tok)
 		}
 		f := o.field(key)
-		f.Count++
+		if f.seen != o.Count { // a key repeated within one object counts once
+			f.seen = o.Count
+			f.Count++
+		}
 		if tok, err = next(dec); err != nil {
 			return err
 		}
