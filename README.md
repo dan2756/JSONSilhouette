@@ -1,6 +1,6 @@
 # jsonshape
 
-Prints the structure of JSON from stdin — types instead of values.
+Prints the structure of JSON — types instead of values.
 
 Point it at an API response you have never seen before and get the shape of
 it on one screen, instead of scrolling through pages of values.
@@ -12,6 +12,12 @@ go install github.com/dan2756/jsonshape@latest
 ```
 
 ## Usage
+
+```sh
+jsonshape [flags] [file]
+```
+
+Reads the named file, or stdin when no file (or `-`) is given.
 
 ```sh
 curl -s https://example.com/api/users | jsonshape
@@ -38,6 +44,23 @@ curl -s https://example.com/api/users | jsonshape
 - A position that holds different types is shown as a union: `string | null`.
 - Ints and floats in the same position are reported as `number`.
 - Keys keep the order in which they first appeared.
+
+Invalid JSON is reported with its line and column:
+
+```
+$ jsonshape config.json
+jsonshape: config.json:3:15: invalid character '}' looking for beginning of object key string
+  3 |   "name": "x",}
+    |               ^
+```
+
+## Exit status
+
+| Code | Meaning                                      |
+|------|----------------------------------------------|
+| 0    | success                                      |
+| 1    | the input could not be read or is not JSON   |
+| 2    | usage error (unknown flag, too many files)   |
 
 ## License
 

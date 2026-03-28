@@ -53,11 +53,14 @@ func TestRunErrors(t *testing.T) {
 		code   int
 		stderr string
 	}{
-		{"empty input", "", nil, 1, "no JSON input"},
-		{"truncated", `{"a": [1, 2`, nil, 1, "unexpected end of JSON input"},
-		{"syntax error", `{"a": 1,}`, nil, 1, "invalid character '}'"},
-		{"trailing data", `{} {}`, nil, 1, "after top-level value"},
+		{"empty input", "", nil, 1, "jsonshape: <stdin>: no JSON input\n"},
+		{"truncated", `{"a": [1, 2`, nil, 1, "<stdin>:1:12: unexpected end of JSON input"},
+		{"syntax error", `{"a": 1,}`, nil, 1, "<stdin>:1:9: invalid character '}'"},
+		{"trailing data", `{} {}`, nil, 1, "<stdin>:1:4: invalid character '{' after top-level value"},
+		{"error in file", ``, []string{"testdata/bad.json"}, 1, "testdata/bad.json:3:15: invalid character '}'"},
+		{"missing file", ``, []string{"testdata/nope.json"}, 1, "open testdata/nope.json: no such file or directory"},
 		{"unknown flag", `{}`, []string{"--nope"}, 2, "flag provided but not defined"},
+		{"two files", `{}`, []string{"a.json", "b.json"}, 2, "too many arguments"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,5 +88,59 @@ func TestRunHelpAndVersion(t *testing.T) {
 	r := runWith(t, "", "--version")
 	if r.code != 0 || !strings.HasPrefix(r.stdout, "jsonshape ") {
 		t.Errorf("--version: exit %d, stdout %q", r.code, r.stdout)
+	}
+}
+
+func TestRunFile(t *testing.T) {
+	want := `[
+  {
+    id: int
+    name: string
+    email: string | null
+    tags: [string]
+    owner: {
+      login: string
+      site_admin: bool
+    }
+    score: number
+    deleted_at?: string
+  }
+]
+`
+	for _, args := range [][]string{
+		{"testdata/users.json"},
+		{"--", "testdata/users.json"},
+	} {
+		r := runWith(t, "", args...)
+		if r.code != 0 || r.stderr != "" {
+			t.Fatalf("%q: exit %d, stderr %q", args, r.code, r.stderr)
+		}
+		if r.stdout != want {
+			t.Errorf("%q: got:\n%s\nwant:\n%s", args, r.stdout, want)
+		}
+	}
+}
+
+func TestRunDashIsStdin(t *testing.T) {
+	r := runWith(t, `{"a": [1.5]}`, "-")
+	if r.code != 0 || r.stdout != "{\n  a: [float]\n}\n" {
+		t.Errorf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+}
+
+func TestRunFlagAfterFile(t *testing.T) {
+	r := runWith(t, "", "testdata/users.json", "--version")
+	if r.code != 0 || !strings.HasPrefix(r.stdout, "jsonshape ") {
+		t.Errorf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+}
+
+func TestRunErrorShowsContext(t *testing.T) {
+	r := runWith(t, "", "testdata/bad.json")
+	want := "jsonshape: testdata/bad.json:3:15: invalid character '}' looking for beginning of object key string\n" +
+		"  3 |   \"name\": \"x\",}\n" +
+		"    |               ^\n"
+	if r.stderr != want {
+		t.Errorf("got:\n%s\nwant:\n%s", r.stderr, want)
 	}
 }

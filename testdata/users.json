@@ -1,0 +1,27 @@
+[
+  {
+    "id": 1,
+    "name": "Ada Lovelace",
+    "email": "ada@example.com",
+    "tags": ["admin", "ops"],
+    "owner": {"login": "ada", "site_admin": true},
+    "score": 9.5
+  },
+  {
+    "id": 2,
+    "name": "Brian Kernighan",
+    "email": null,
+    "tags": [],
+    "owner": {"login": "bwk", "site_admin": false},
+    "score": 7,
+    "deleted_at": "2026-01-02T03:04:05Z"
+  },
+  {
+    "id": 3,
+    "name": "Grace Hopper",
+    "email": "grace@example.com",
+    "tags": ["dev"],
+    "owner": {"login": "grace", "site_admin": false},
+    "score": 8.25
+  }
+]
