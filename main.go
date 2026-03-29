@@ -26,8 +26,11 @@ elements are marked optional with "?". Ints and floats seen in the same
 place are reported as "number".
 
 Flags:
-  -h, --help     show this help
-      --version  print the version and exit
+      --no-color  never color the output (also when NO_COLOR is set)
+  -h, --help      show this help
+      --version   print the version and exit
+
+Types are colored when stdout is a terminal.
 
 Exit status is 0 on success, 1 if the input cannot be read or is not
 valid JSON, and 2 for usage errors.
@@ -41,6 +44,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("jsonshape", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	showVersion := fs.Bool("version", false, "")
+	noColor := fs.Bool("no-color", false, "")
 	files, err := parseArgs(fs, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -71,8 +75,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	opts := shape.Options{Color: useColor(stdout, *noColor)}
 	w := bufio.NewWriter(stdout)
-	err = shape.Render(w, root)
+	err = shape.Render(w, root, opts)
 	if err == nil {
 		err = w.Flush()
 	}
@@ -121,6 +126,25 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 		files = append(files, rest[0])
 		args = rest[1:]
 	}
+}
+
+// useColor reports whether output to w should be colored: only when it is
+// a terminal, and never with --no-color, NO_COLOR or TERM=dumb.
+func useColor(w io.Writer, noColor bool) bool {
+	if noColor || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	return isTerminal(w)
+}
+
+// isTerminal reports whether w is a terminal; tests replace it.
+var isTerminal = func(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 func usageError(stderr io.Writer, msg string) int {

@@ -45,6 +45,20 @@ curl -s https://example.com/api/users | jsonshape
 - Ints and floats in the same position are reported as `number`.
 - Keys keep the order in which they first appeared.
 
+## Flags
+
+| Flag         | Meaning                                         |
+|--------------|-------------------------------------------------|
+| `--no-color` | never color the output                          |
+| `-h, --help` | show usage                                      |
+| `--version`  | print the version                               |
+
+Types, keys and optional markers are colored when stdout is a terminal.
+Setting `NO_COLOR` (to anything non-empty) or `TERM=dumb` turns colors off,
+as does `--no-color`.
+
+## Errors
+
 Invalid JSON is reported with its line and column:
 
 ```

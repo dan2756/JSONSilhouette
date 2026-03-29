@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"strings"
 	"testing"
 )
@@ -142,5 +143,34 @@ func TestRunErrorShowsContext(t *testing.T) {
 		"    |               ^\n"
 	if r.stderr != want {
 		t.Errorf("got:\n%s\nwant:\n%s", r.stderr, want)
+	}
+}
+
+func TestRunColor(t *testing.T) {
+	orig := isTerminal
+	isTerminal = func(io.Writer) bool { return true }
+	t.Cleanup(func() { isTerminal = orig })
+	t.Setenv("TERM", "xterm-256color")
+
+	colored := "{\n  \x1b[34ma\x1b[0m: \x1b[36mint\x1b[0m\n}\n"
+	plain := "{\n  a: int\n}\n"
+	tests := []struct {
+		name    string
+		noColor string
+		args    []string
+		want    string
+	}{
+		{"terminal", "", nil, colored},
+		{"--no-color", "", []string{"--no-color"}, plain},
+		{"NO_COLOR", "1", nil, plain},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("NO_COLOR", tt.noColor)
+			r := runWith(t, `{"a": 1}`, tt.args...)
+			if r.stdout != tt.want {
+				t.Errorf("got %q, want %q", r.stdout, tt.want)
+			}
+		})
 	}
 }

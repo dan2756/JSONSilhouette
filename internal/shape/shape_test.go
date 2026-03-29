@@ -17,10 +17,10 @@ func infer(t *testing.T, docs ...string) *Shape {
 	return s
 }
 
-func render(t *testing.T, s *Shape) string {
+func render(t *testing.T, s *Shape, opts Options) string {
 	t.Helper()
 	var b strings.Builder
-	if err := Render(&b, s); err != nil {
+	if err := Render(&b, s, opts); err != nil {
 		t.Fatal(err)
 	}
 	return b.String()
@@ -118,7 +118,7 @@ func TestRender(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := render(t, infer(t, tt.in))
+			got := render(t, infer(t, tt.in), Options{})
 			if want := tt.want + "\n"; got != want {
 				t.Errorf("Render(%s)\ngot:\n%s\nwant:\n%s", tt.in, got, want)
 			}
@@ -129,7 +129,7 @@ func TestRender(t *testing.T) {
 func TestSamplesMerge(t *testing.T) {
 	s := infer(t, `{"id": 1, "name": "a"}`, `{"id": 2.5}`, `{"id": 3, "extra": [true]}`)
 	want := "{\n  id: number\n  name?: string\n  extra?: [bool]\n}\n"
-	if got := render(t, s); got != want {
+	if got := render(t, s, Options{}); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -178,5 +178,27 @@ func TestAddErrors(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("Add(%q) = %v, want error containing %q", tt.in, err, tt.want)
 		}
+	}
+}
+
+func TestRenderColor(t *testing.T) {
+	s := infer(t, `[{"id": 1, "ok": true, "name": "x", "x": null}, {"id": 2.5, "ok": false}]`)
+	const (
+		blue   = "\x1b[34m"
+		yellow = "\x1b[33m"
+		green  = "\x1b[32m"
+		cyan   = "\x1b[36m"
+		purple = "\x1b[35m"
+		gray   = "\x1b[90m"
+		reset  = "\x1b[0m"
+	)
+	want := "[\n  {\n" +
+		"    " + blue + "id" + reset + ": " + cyan + "number" + reset + "\n" +
+		"    " + blue + "ok" + reset + ": " + purple + "bool" + reset + "\n" +
+		"    " + blue + "name" + reset + yellow + "?" + reset + ": " + green + "string" + reset + "\n" +
+		"    " + blue + "x" + reset + yellow + "?" + reset + ": " + gray + "null" + reset + "\n" +
+		"  }\n]\n"
+	if got := render(t, s, Options{Color: true}); got != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
 	}
 }

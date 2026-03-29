@@ -8,6 +8,12 @@ import (
 	"unicode"
 )
 
+// Options control how a shape is rendered.
+type Options struct {
+	// Color highlights types, keys and optional markers with ANSI escapes.
+	Color bool
+}
+
 // Render writes s to w as an indented tree, one key per line:
 //
 //	[
@@ -18,8 +24,8 @@ import (
 //	    deleted_at?: string
 //	  }
 //	]
-func Render(w io.Writer, s *Shape) error {
-	var r renderer
+func Render(w io.Writer, s *Shape, opts Options) error {
+	r := renderer{opts: opts}
 	r.expr(s, 0)
 	r.b.WriteByte('\n')
 	_, err := io.WriteString(w, r.b.String())
@@ -27,7 +33,57 @@ func Render(w io.Writer, s *Shape) error {
 }
 
 type renderer struct {
-	b strings.Builder
+	opts Options
+	b    strings.Builder
+}
+
+// style is the color class of a piece of output.
+type style uint8
+
+const (
+	plain style = iota
+	keyStyle
+	optionalStyle
+	stringStyle
+	numberStyle
+	boolStyle
+	nullStyle
+)
+
+var ansi = [...]string{
+	keyStyle:      "34",
+	optionalStyle: "33",
+	stringStyle:   "32",
+	numberStyle:   "36",
+	boolStyle:     "35",
+	nullStyle:     "90",
+}
+
+func (k kind) style() style {
+	switch k {
+	case kindBool:
+		return boolStyle
+	case kindInt, kindFloat, kindNumber:
+		return numberStyle
+	case kindString:
+		return stringStyle
+	case kindNull:
+		return nullStyle
+	}
+	return plain
+}
+
+// paint writes text in the given style.
+func (r *renderer) paint(text string, st style) {
+	if !r.opts.Color || st == plain {
+		r.b.WriteString(text)
+		return
+	}
+	r.b.WriteString("\x1b[")
+	r.b.WriteString(ansi[st])
+	r.b.WriteByte('m')
+	r.b.WriteString(text)
+	r.b.WriteString("\x1b[0m")
 }
 
 func (r *renderer) indent(n int) {
@@ -50,7 +106,7 @@ func (r *renderer) expr(s *Shape, indent int) {
 		case kindArray:
 			r.array(s.Array, indent)
 		default:
-			r.b.WriteString(m.kind.String())
+			r.paint(m.kind.String(), m.kind.style())
 		}
 	}
 }
@@ -63,9 +119,9 @@ func (r *renderer) object(o *Object, indent int) {
 	r.b.WriteString("{\n")
 	for _, f := range o.Fields {
 		r.indent(indent + 1)
-		r.b.WriteString(displayKey(f.Key))
+		r.paint(displayKey(f.Key), keyStyle)
 		if o.Optional(f) {
-			r.b.WriteByte('?')
+			r.paint("?", optionalStyle)
 		}
 		r.b.WriteString(": ")
 		r.expr(f.Shape, indent+1)
