@@ -61,7 +61,9 @@ func TestRunErrors(t *testing.T) {
 		{"error in file", ``, []string{"testdata/bad.json"}, 1, "testdata/bad.json:3:15: invalid character '}'"},
 		{"missing file", ``, []string{"testdata/nope.json"}, 1, "open testdata/nope.json: no such file or directory"},
 		{"unknown flag", `{}`, []string{"--nope"}, 2, "flag provided but not defined"},
-		{"two files", `{}`, []string{"a.json", "b.json"}, 2, "too many arguments"},
+		{"empty lines input", "\n\n", []string{"--lines"}, 1, "jsonshape: no JSON input\n"},
+		{"error in second file", `{}`, []string{"-", "testdata/bad.json"}, 1, "testdata/bad.json:3:15:"},
+		{"ndjson without --lines", "{}\n{}\n", nil, 1, "(use --lines for one JSON value per line)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,5 +174,41 @@ func TestRunColor(t *testing.T) {
 				t.Errorf("got %q, want %q", r.stdout, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunLines(t *testing.T) {
+	want := `{
+  ts: string
+  level: string
+  msg: string
+  port?: int
+  method?: string
+  path?: string
+  status?: int
+  duration_ms?: number
+  error?: {
+    code: string
+    retryable: bool
+  }
+}
+`
+	r := runWith(t, "", "--lines", "testdata/events.ndjson")
+	if r.code != 0 || r.stderr != "" {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if r.stdout != want {
+		t.Errorf("got:\n%s\nwant:\n%s", r.stdout, want)
+	}
+}
+
+func TestRunMergesFiles(t *testing.T) {
+	r := runWith(t, `{"id": "x", "extra": true}`, "testdata/users.json", "-")
+	want := "[\n  {\n    id: int\n" // the array's shape comes first
+	if r.code != 0 || !strings.HasPrefix(r.stdout, want) {
+		t.Fatalf("exit %d, stderr %q, stdout:\n%s", r.code, r.stderr, r.stdout)
+	}
+	if !strings.HasSuffix(r.stdout, "] | {\n  id: string\n  extra: bool\n}\n") {
+		t.Errorf("stdout:\n%s", r.stdout)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -43,13 +44,53 @@ func decodeDocument(root *shape.Shape, name string, data []byte) error {
 	if err == io.EOF {
 		return fmt.Errorf("%s: no JSON input", name)
 	}
-	if err == nil {
-		if _, err := dec.Token(); err == io.EOF {
+	if err != nil {
+		return locate(name, data, 1, err)
+	}
+	end := dec.InputOffset()
+	if _, err := dec.Token(); err == io.EOF {
+		return nil
+	}
+	// Something follows the value. If it looks like another value, the
+	// input is probably NDJSON.
+	e := locate(name, data, 1, nil)
+	rest := bytes.TrimLeft(data[end:], " \t\r\n")
+	if se, ok := e.(*syntaxError); ok && len(rest) > 0 && bytes.IndexByte([]byte(`{["-0123456789tfn`), rest[0]) >= 0 {
+		se.msg += " (use --lines for one JSON value per line)"
+	}
+	return e
+}
+
+// decodeLines merges each line of r into root as a separate sample, as for
+// NDJSON (JSON Lines) input. Blank lines are skipped.
+func decodeLines(root *shape.Shape, name string, r io.Reader) error {
+	br := bufio.NewReader(r)
+	for lineNo := 1; ; lineNo++ {
+		line, err := br.ReadBytes('\n')
+		if len(bytes.TrimSpace(line)) > 0 {
+			if err := decodeLine(root, name, line, lineNo); err != nil {
+				return err
+			}
+		}
+		if err == io.EOF {
 			return nil
 		}
-		return locate(name, data, 1, nil) // something after the value
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
 	}
-	return locate(name, data, 1, err)
+}
+
+// decodeLine merges the one JSON value on line lineNo into root.
+func decodeLine(root *shape.Shape, name string, line []byte, lineNo int) error {
+	dec := shape.NewDecoder(bytes.NewReader(line))
+	if err := root.Add(dec); err != nil {
+		return locate(name, line, lineNo, err)
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return locate(name, line, lineNo, nil)
+	}
+	return nil
 }
 
 // locate reports the first error in data, which is known not to hold

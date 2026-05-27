@@ -16,16 +16,18 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = ""
 
-const usage = `Usage: jsonshape [flags] [file]
+const usage = `Usage: jsonshape [flags] [file ...]
 
 Print the structure of JSON: types instead of values. Reads the named
-file, or stdin when there is none or it is "-".
+files, or stdin when there are none; "-" also means stdin.
 
 Arrays merge the shapes of all their elements; keys missing from some
 elements are marked optional with "?". Ints and floats seen in the same
-place are reported as "number".
+place are reported as "number". Several files are merged the same way,
+each one a sample of the same shape.
 
 Flags:
+      --lines     read NDJSON: every line is a JSON value, all merged
       --no-color  never color the output (also when NO_COLOR is set)
   -h, --help      show this help
       --version   print the version and exit
@@ -45,6 +47,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 	showVersion := fs.Bool("version", false, "")
 	noColor := fs.Bool("no-color", false, "")
+	lines := fs.Bool("lines", false, "")
 	files, err := parseArgs(fs, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -57,21 +60,23 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "jsonshape %s\n", buildVersion())
 		return 0
 	}
-	if len(files) > 1 {
-		return usageError(stderr, fmt.Sprintf("too many arguments: %q", files[1:]))
+	if len(files) == 0 {
+		files = []string{"-"}
 	}
 
 	root := shape.New()
-	path := "-"
-	if len(files) == 1 {
-		path = files[0]
-	}
-	if err := readInput(root, path, stdin); err != nil {
-		fmt.Fprintf(stderr, "jsonshape: %v\n", err)
-		var se *syntaxError
-		if errors.As(err, &se) {
-			fmt.Fprint(stderr, se.context())
+	for _, path := range files {
+		if err := readInput(root, path, stdin, *lines); err != nil {
+			fmt.Fprintf(stderr, "jsonshape: %v\n", err)
+			var se *syntaxError
+			if errors.As(err, &se) {
+				fmt.Fprint(stderr, se.context())
+			}
+			return 1
 		}
+	}
+	if root.Count == 0 {
+		fmt.Fprintln(stderr, "jsonshape: no JSON input")
 		return 1
 	}
 
@@ -88,9 +93,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// readInput merges the JSON value in the named file, or in stdin when path
-// is "-", into root.
-func readInput(root *shape.Shape, path string, stdin io.Reader) error {
+// readInput merges the JSON in the named file, or in stdin when path is
+// "-", into root: one value, or with lines one value per line.
+func readInput(root *shape.Shape, path string, stdin io.Reader, lines bool) error {
 	name, r := "<stdin>", stdin
 	if path != "-" {
 		f, err := os.Open(path)
@@ -99,6 +104,9 @@ func readInput(root *shape.Shape, path string, stdin io.Reader) error {
 		}
 		defer f.Close()
 		name, r = path, f
+	}
+	if lines {
+		return decodeLines(root, name, r)
 	}
 	data, err := io.ReadAll(r)
 	if err != nil {

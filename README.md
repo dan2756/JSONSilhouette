@@ -14,10 +14,11 @@ go install github.com/dan2756/jsonshape@latest
 ## Usage
 
 ```sh
-jsonshape [flags] [file]
+jsonshape [flags] [file ...]
 ```
 
-Reads the named file, or stdin when no file (or `-`) is given.
+Reads the named files, or stdin when none (or `-`) is given. Several files
+are merged as samples of one shape.
 
 ```sh
 curl -s https://example.com/api/users | jsonshape
@@ -49,9 +50,37 @@ curl -s https://example.com/api/users | jsonshape
 
 | Flag         | Meaning                                         |
 |--------------|-------------------------------------------------|
+| `--lines`    | read NDJSON: one value per line, all merged     |
 | `--no-color` | never color the output                          |
 | `-h, --help` | show usage                                      |
 | `--version`  | print the version                               |
+
+### NDJSON
+
+With `--lines` every non-blank line is parsed as its own JSON value, and all
+of them are merged, so a log file gives the shape of its records:
+
+```sh
+$ jsonshape --lines app.log
+{
+  ts: string
+  level: string
+  msg: string
+  port?: int
+  method?: string
+  path?: string
+  status?: int
+  duration_ms?: number
+  error?: {
+    code: string
+    retryable: bool
+  }
+}
+```
+
+Lines are read one at a time, so large logs are fine.
+
+### Colors
 
 Types, keys and optional markers are colored when stdout is a terminal.
 Setting `NO_COLOR` (to anything non-empty) or `TERM=dumb` turns colors off,

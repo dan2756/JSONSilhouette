@@ -1,0 +1,5 @@
+{"ts":"2026-05-01T10:00:00Z","level":"info","msg":"server started","port":8080}
+{"ts":"2026-05-01T10:00:02Z","level":"info","msg":"request","method":"GET","path":"/users","status":200,"duration_ms":12.4}
+
+{"ts":"2026-05-01T10:00:03Z","level":"warn","msg":"slow request","method":"POST","path":"/users","status":201,"duration_ms":950}
+{"ts":"2026-05-01T10:00:05Z","level":"error","msg":"request failed","method":"GET","path":"/orders/17","status":500,"duration_ms":3.1,"error":{"code":"E_DB","retryable":true}}
