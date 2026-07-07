@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,6 +26,8 @@ place are reported as "number". Several files are merged the same way,
 each one a sample of the same shape.
 
 Flags:
+      --depth N   show N levels of nesting; deeper ones collapse to {…} / […]
+      --paths     print one path per line, e.g. ".[].owner.login  string"
       --lines     read NDJSON: every line is a JSON value, all merged
       --no-color  never color the output (also when NO_COLOR is set)
   -h, --help      show this help
@@ -48,6 +49,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	showVersion := fs.Bool("version", false, "")
 	noColor := fs.Bool("no-color", false, "")
 	lines := fs.Bool("lines", false, "")
+	depth := fs.Int("depth", 0, "")
+	paths := fs.Bool("paths", false, "")
 	files, err := parseArgs(fs, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -59,6 +62,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if *showVersion {
 		fmt.Fprintf(stdout, "jsonshape %s\n", buildVersion())
 		return 0
+	}
+	if *depth < 0 {
+		return usageError(stderr, fmt.Sprintf("invalid --depth %d: must be at least 1, or 0 for no limit", *depth))
 	}
 	if len(files) == 0 {
 		files = []string{"-"}
@@ -80,13 +86,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	opts := shape.Options{Color: useColor(stdout, *noColor)}
-	w := bufio.NewWriter(stdout)
-	err = shape.Render(w, root, opts)
-	if err == nil {
-		err = w.Flush()
+	opts := shape.Options{
+		Depth: *depth,
+		Color: useColor(stdout, *noColor),
 	}
-	if err != nil {
+	render := shape.Render
+	if *paths {
+		render = shape.RenderPaths
+	}
+	if err := render(stdout, root, opts); err != nil {
 		fmt.Fprintf(stderr, "jsonshape: %v\n", err)
 		return 1
 	}

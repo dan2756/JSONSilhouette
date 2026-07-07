@@ -10,8 +10,18 @@ import (
 
 // Options control how a shape is rendered.
 type Options struct {
+	// Depth limits how many levels of nested objects and arrays are shown;
+	// deeper ones collapse to {…} and […]. Zero means no limit.
+	Depth int
+
 	// Color highlights types, keys and optional markers with ANSI escapes.
 	Color bool
+}
+
+// collapsed reports whether a container at the given nesting level, where
+// the top-level value is level 1, is hidden by the Depth limit.
+func (o Options) collapsed(level int) bool {
+	return o.Depth > 0 && level > o.Depth
 }
 
 // Render writes s to w as an indented tree, one key per line:
@@ -26,138 +36,107 @@ type Options struct {
 //	]
 func Render(w io.Writer, s *Shape, opts Options) error {
 	r := renderer{opts: opts}
-	r.expr(s, 0)
-	r.b.WriteByte('\n')
-	_, err := io.WriteString(w, r.b.String())
-	return err
+	r.expr(s, 1, 0)
+	r.newline()
+	return writeLines(w, r.lines, opts.Color)
 }
 
 type renderer struct {
-	opts Options
-	b    strings.Builder
+	opts  Options
+	lines []line
+	cur   line
 }
 
-// style is the color class of a piece of output.
-type style uint8
+func (r *renderer) add(text string, st style) { r.cur.add(text, st) }
 
-const (
-	plain style = iota
-	keyStyle
-	optionalStyle
-	stringStyle
-	numberStyle
-	boolStyle
-	nullStyle
-)
-
-var ansi = [...]string{
-	keyStyle:      "34",
-	optionalStyle: "33",
-	stringStyle:   "32",
-	numberStyle:   "36",
-	boolStyle:     "35",
-	nullStyle:     "90",
-}
-
-func (k kind) style() style {
-	switch k {
-	case kindBool:
-		return boolStyle
-	case kindInt, kindFloat, kindNumber:
-		return numberStyle
-	case kindString:
-		return stringStyle
-	case kindNull:
-		return nullStyle
-	}
-	return plain
-}
-
-// paint writes text in the given style.
-func (r *renderer) paint(text string, st style) {
-	if !r.opts.Color || st == plain {
-		r.b.WriteString(text)
-		return
-	}
-	r.b.WriteString("\x1b[")
-	r.b.WriteString(ansi[st])
-	r.b.WriteByte('m')
-	r.b.WriteString(text)
-	r.b.WriteString("\x1b[0m")
+func (r *renderer) newline() {
+	r.lines = append(r.lines, r.cur)
+	r.cur = line{}
 }
 
 func (r *renderer) indent(n int) {
-	for range n {
-		r.b.WriteString("  ")
+	if n > 0 {
+		r.add(strings.Repeat("  ", n), plain)
 	}
 }
 
-// expr writes the type of s starting at the current position. Objects and
-// arrays of objects continue over several lines, indented one step past
-// indent.
-func (r *renderer) expr(s *Shape, indent int) {
+// expr writes the type of s, a value at the given nesting level, starting
+// at the current position. Objects and arrays of objects continue over
+// several lines, indented one step past indent.
+func (r *renderer) expr(s *Shape, level, indent int) {
 	for i, m := range s.members(false) {
 		if i > 0 {
-			r.b.WriteString(" | ")
+			r.add(" | ", plain)
 		}
 		switch m.kind {
 		case kindObject:
-			r.object(s.Object, indent)
+			r.object(s.Object, level, indent)
 		case kindArray:
-			r.array(s.Array, indent)
+			r.array(s.Array, level, indent)
 		default:
-			r.paint(m.kind.String(), m.kind.style())
+			r.add(m.kind.String(), m.kind.style())
 		}
 	}
 }
 
-func (r *renderer) object(o *Object, indent int) {
-	if len(o.Fields) == 0 {
-		r.b.WriteString("{}")
+func (r *renderer) object(o *Object, level, indent int) {
+	switch {
+	case len(o.Fields) == 0:
+		r.add("{}", plain)
+		return
+	case r.opts.collapsed(level):
+		r.add("{…}", dimStyle)
 		return
 	}
-	r.b.WriteString("{\n")
+	r.add("{", plain)
+	r.newline()
 	for _, f := range o.Fields {
 		r.indent(indent + 1)
-		r.paint(displayKey(f.Key), keyStyle)
+		r.add(displayKey(f.Key), keyStyle)
 		if o.Optional(f) {
-			r.paint("?", optionalStyle)
+			r.add("?", optionalStyle)
 		}
-		r.b.WriteString(": ")
-		r.expr(f.Shape, indent+1)
-		r.b.WriteByte('\n')
+		r.add(": ", plain)
+		r.expr(f.Shape, level+1, indent+1)
+		r.newline()
 	}
 	r.indent(indent)
-	r.b.WriteByte('}')
+	r.add("}", plain)
 }
 
-func (r *renderer) array(a *Array, indent int) {
-	if a.Items.Count == 0 {
-		r.b.WriteString("[]")
+func (r *renderer) array(a *Array, level, indent int) {
+	switch {
+	case a.Items.Count == 0:
+		r.add("[]", plain)
+		return
+	case r.opts.collapsed(level):
+		r.add("[…]", dimStyle)
+		return
+	case r.inline(a.Items, level+1):
+		r.add("[", plain)
+		r.expr(a.Items, level+1, indent)
+		r.add("]", plain)
 		return
 	}
-	if inline(a.Items) {
-		r.b.WriteByte('[')
-		r.expr(a.Items, indent)
-		r.b.WriteByte(']')
-		return
-	}
-	r.b.WriteString("[\n")
+	r.add("[", plain)
+	r.newline()
 	r.indent(indent + 1)
-	r.expr(a.Items, indent+1)
-	r.b.WriteByte('\n')
+	r.expr(a.Items, level+1, indent+1)
+	r.newline()
 	r.indent(indent)
-	r.b.WriteByte(']')
+	r.add("]", plain)
 }
 
-// inline reports whether s fits on one line: it holds no non-empty object,
-// at any depth.
-func inline(s *Shape) bool {
-	if s.Object != nil && len(s.Object.Fields) > 0 {
+// inline reports whether s, a value at the given level, fits on one line:
+// it shows no non-empty object at any depth.
+func (r *renderer) inline(s *Shape, level int) bool {
+	switch {
+	case r.opts.collapsed(level):
+		return true
+	case s.Object != nil && len(s.Object.Fields) > 0:
 		return false
-	}
-	if s.Array != nil {
-		return inline(s.Array.Items)
+	case s.Array != nil:
+		return r.inline(s.Array.Items, level+1)
 	}
 	return true
 }

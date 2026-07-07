@@ -48,12 +48,62 @@ curl -s https://example.com/api/users | jsonshape
 
 ## Flags
 
-| Flag         | Meaning                                         |
-|--------------|-------------------------------------------------|
-| `--lines`    | read NDJSON: one value per line, all merged     |
-| `--no-color` | never color the output                          |
-| `-h, --help` | show usage                                      |
-| `--version`  | print the version                               |
+| Flag          | Meaning                                                  |
+|---------------|----------------------------------------------------------|
+| `--depth N`   | show N levels of nesting, collapse deeper ones to `{…}`  |
+| `--paths`     | flattened output, one path per line                      |
+| `--lines`     | read NDJSON: one value per line, all merged              |
+| `--no-color`  | never color the output                                   |
+| `-h, --help`  | show usage                                               |
+| `--version`   | print the version                                        |
+
+Flags may come before or after the file names; `--` ends the flags.
+
+### Paths
+
+`--paths` prints every position on its own line with a jq-style path, which
+is handy for grep and for writing jq filters:
+
+```sh
+$ jsonshape --paths users.json
+.                     array
+.[]                   object
+.[].id                int
+.[].name              string
+.[].email             string | null
+.[].tags              array
+.[].tags[]            string
+.[].owner             object
+.[].owner.login       string
+.[].owner.site_admin  bool
+.[].deleted_at?       string
+```
+
+Optional keys keep their `?`, which jq reads as "ignore errors here", so
+the paths can be pasted into a filter as they are. Keys that are not plain
+identifiers are written as `.["content-type"]`.
+
+### Depth
+
+`--depth N` keeps the top N levels of objects and arrays and collapses the
+rest, for documents too big to take in at once:
+
+```sh
+$ jsonshape --depth 2 users.json
+[
+  {
+    id: int
+    name: string
+    email: string | null
+    tags: […]
+    owner: {…}
+    deleted_at?: string
+  }
+]
+```
+
+Empty objects and arrays still show as `{}` and `[]`. `--depth` applies to
+`--paths` too.
 
 ### NDJSON
 
