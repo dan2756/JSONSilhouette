@@ -26,7 +26,7 @@ const maxPathColumn = 48
 // for jq.
 func RenderPaths(w io.Writer, s *Shape, opts Options) error {
 	p := pathRenderer{opts: opts}
-	p.walk(nil, s, 1)
+	p.walk(nil, s, 1, samples(s))
 
 	col := 0
 	for _, e := range p.entries {
@@ -36,7 +36,7 @@ func RenderPaths(w io.Writer, s *Shape, opts Options) error {
 
 	lines := make([]line, len(p.entries))
 	for i, e := range p.entries {
-		l := line{segs: slices.Clone(e.path.segs)}
+		l := line{segs: slices.Clone(e.path.segs), note: e.note}
 		l.add(strings.Repeat(" ", max(2, col-l.width())), plain)
 		l.segs = append(l.segs, e.typ.segs...)
 		lines[i] = l
@@ -46,6 +46,7 @@ func RenderPaths(w io.Writer, s *Shape, opts Options) error {
 
 type pathEntry struct {
 	path, typ line
+	note      string
 }
 
 type pathRenderer struct {
@@ -55,10 +56,14 @@ type pathRenderer struct {
 
 // walk lists the position at path, holding s at the given nesting level,
 // and everything below it. The root's path is empty and printed as ".".
-func (p *pathRenderer) walk(path []seg, s *Shape, level int) {
+// first leads the position's --counts note.
+func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string) {
 	e := pathEntry{path: line{segs: path}, typ: typeSummary(s)}
 	if len(path) == 0 {
 		e.path.add(".", plain)
+	}
+	if p.opts.Counts {
+		e.note = joinNote(first, breakdown(s))
 	}
 	p.entries = append(p.entries, e)
 	if p.opts.collapsed(level) {
@@ -70,7 +75,7 @@ func (p *pathRenderer) walk(path []seg, s *Shape, level int) {
 			if o.Optional(f) {
 				child = append(child, seg{"?", optionalStyle})
 			}
-			p.walk(child, f.Shape, level+1)
+			p.walk(child, f.Shape, level+1, presence(f.Count, o.Count))
 		}
 	}
 	if a := s.Array; a != nil && a.Items.Count > 0 {
@@ -78,7 +83,7 @@ func (p *pathRenderer) walk(path []seg, s *Shape, level int) {
 		if len(path) == 0 {
 			text = ".[]"
 		}
-		p.walk(append(slices.Clip(path), seg{text, plain}), a.Items, level+1)
+		p.walk(append(slices.Clip(path), seg{text, plain}), a.Items, level+1, countOf(a.Items.Count, "item"))
 	}
 }
 

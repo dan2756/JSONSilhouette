@@ -234,3 +234,28 @@ func TestRunPathsAndDepth(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", r.stdout, want)
 	}
 }
+
+func TestRunCountsLines(t *testing.T) {
+	want := `{                       # 4 samples
+  ts: string            # 4/4
+  level: string         # 4/4
+  msg: string           # 4/4
+  port?: int            # 1/4
+  method?: string       # 3/4
+  path?: string         # 3/4
+  status?: int          # 3/4
+  duration_ms?: number  # 3/4 · int 1, float 2
+  error?: {             # 1/4
+    code: string        # 1/1
+    retryable: bool     # 1/1
+  }
+}
+`
+	r := runWith(t, "", "--counts", "--lines", "testdata/events.ndjson")
+	if r.code != 0 || r.stderr != "" {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if r.stdout != want {
+		t.Errorf("got:\n%s\nwant:\n%s", r.stdout, want)
+	}
+}

@@ -14,6 +14,10 @@ type Options struct {
 	// deeper ones collapse to {…} and […]. Zero means no limit.
 	Depth int
 
+	// Counts annotates each line with how many values were seen there:
+	// how many objects had the key, and how many values had each type.
+	Counts bool
+
 	// Color highlights types, keys and optional markers with ANSI escapes.
 	Color bool
 }
@@ -36,6 +40,7 @@ func (o Options) collapsed(level int) bool {
 //	]
 func Render(w io.Writer, s *Shape, opts Options) error {
 	r := renderer{opts: opts}
+	r.note(s, 1, samples(s))
 	r.expr(s, 1, 0)
 	r.newline()
 	return writeLines(w, r.lines, opts.Color)
@@ -52,6 +57,24 @@ func (r *renderer) add(text string, st style) { r.cur.add(text, st) }
 func (r *renderer) newline() {
 	r.lines = append(r.lines, r.cur)
 	r.cur = line{}
+}
+
+// note sets the --counts note for the slot starting on the current line,
+// which holds s at the given level. first leads the note: the key's
+// presence, or the number of samples or items.
+func (r *renderer) note(s *Shape, level int, first string) {
+	if !r.opts.Counts {
+		return
+	}
+	var items string
+	if a := s.Array; a != nil && a.Items.Count > 0 && !r.opts.collapsed(level) && r.inline(a.Items, level+1) {
+		// The items get no line of their own, so count them here.
+		items = countOf(a.Items.Count, "item")
+		if b := breakdown(a.Items); b != "" {
+			items += " (" + b + ")"
+		}
+	}
+	r.cur.note = joinNote(first, breakdown(s), items)
 }
 
 func (r *renderer) indent(n int) {
@@ -97,6 +120,7 @@ func (r *renderer) object(o *Object, level, indent int) {
 			r.add("?", optionalStyle)
 		}
 		r.add(": ", plain)
+		r.note(f.Shape, level+1, presence(f.Count, o.Count))
 		r.expr(f.Shape, level+1, indent+1)
 		r.newline()
 	}
@@ -121,6 +145,7 @@ func (r *renderer) array(a *Array, level, indent int) {
 	r.add("[", plain)
 	r.newline()
 	r.indent(indent + 1)
+	r.note(a.Items, level+1, countOf(a.Items.Count, "item"))
 	r.expr(a.Items, level+1, indent+1)
 	r.newline()
 	r.indent(indent)

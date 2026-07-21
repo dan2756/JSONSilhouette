@@ -105,3 +105,17 @@ func TestRenderPathsColor(t *testing.T) {
 		t.Errorf("got:\n%q\nwant:\n%q", got, want)
 	}
 }
+
+func TestRenderPathsCounts(t *testing.T) {
+	s := infer(t, `[{"id": 1, "tags": ["x", "y"]}, {"id": "2", "tags": []}, {"tags": null}]`)
+	want := strings.Join([]string{
+		".           array",
+		".[]         object        # 3 items",
+		".[].id?     int | string  # 2/3 · int 1, string 1",
+		".[].tags    array | null  # 3/3 · array 2, null 1",
+		".[].tags[]  string        # 2 items",
+	}, "\n") + "\n"
+	if got := renderPaths(t, s, Options{Counts: true}); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}

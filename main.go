@@ -28,6 +28,7 @@ each one a sample of the same shape.
 Flags:
       --depth N   show N levels of nesting; deeper ones collapse to {…} / […]
       --paths     print one path per line, e.g. ".[].owner.login  string"
+      --counts    note how many samples had each key and each type
       --lines     read NDJSON: every line is a JSON value, all merged
       --no-color  never color the output (also when NO_COLOR is set)
   -h, --help      show this help
@@ -51,6 +52,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	lines := fs.Bool("lines", false, "")
 	depth := fs.Int("depth", 0, "")
 	paths := fs.Bool("paths", false, "")
+	counts := fs.Bool("counts", false, "")
 	files, err := parseArgs(fs, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -87,8 +89,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	opts := shape.Options{
-		Depth: *depth,
-		Color: useColor(stdout, *noColor),
+		Depth:  *depth,
+		Counts: *counts,
+		Color:  useColor(stdout, *noColor),
 	}
 	render := shape.Render
 	if *paths {

@@ -52,6 +52,7 @@ curl -s https://example.com/api/users | jsonshape
 |---------------|----------------------------------------------------------|
 | `--depth N`   | show N levels of nesting, collapse deeper ones to `{…}`  |
 | `--paths`     | flattened output, one path per line                      |
+| `--counts`    | note how many samples had each key and each type         |
 | `--lines`     | read NDJSON: one value per line, all merged              |
 | `--no-color`  | never color the output                                   |
 | `-h, --help`  | show usage                                               |
@@ -104,6 +105,33 @@ $ jsonshape --depth 2 users.json
 
 Empty objects and arrays still show as `{}` and `[]`. `--depth` applies to
 `--paths` too.
+
+### Counts
+
+`--counts` adds a comment to each line: how many of the objects had the
+key, and how many values of each type were seen when there was more than
+one. Arrays show how many items they held between them.
+
+```sh
+$ jsonshape --counts users.json
+[
+  {                       # 3 items
+    id: int               # 3/3
+    name: string          # 3/3
+    email: string | null  # 3/3 · string 2, null 1
+    tags: [string]        # 3/3 · 3 items
+    owner: {              # 3/3
+      login: string       # 3/3
+      site_admin: bool    # 3/3
+    }
+    score: number         # 3/3 · int 1, float 2
+    deleted_at?: string   # 1/3
+  }
+]
+```
+
+It works with `--paths` as well, and is most useful with `--lines`, where
+the top line says how many records were read.
 
 ### NDJSON
 
