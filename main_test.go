@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -63,6 +65,8 @@ func TestRunErrors(t *testing.T) {
 		{"unknown flag", `{}`, []string{"--nope"}, 2, "flag provided but not defined"},
 		{"negative depth", `{}`, []string{"--depth", "-1"}, 2, "invalid --depth -1"},
 		{"bad depth", `{}`, []string{"--depth", "two"}, 2, `invalid value "two" for flag -depth`},
+		{"schema and paths", `{}`, []string{"--json-schema", "--paths"}, 2, "cannot be combined"},
+		{"schema and counts", `{}`, []string{"--counts", "--json-schema"}, 2, "cannot be combined"},
 		{"empty lines input", "\n\n", []string{"--lines"}, 1, "jsonshape: no JSON input\n"},
 		{"error in second file", `{}`, []string{"-", "testdata/bad.json"}, 1, "testdata/bad.json:3:15:"},
 		{"ndjson without --lines", "{}\n{}\n", nil, 1, "(use --lines for one JSON value per line)"},
@@ -257,5 +261,41 @@ func TestRunCountsLines(t *testing.T) {
 	}
 	if r.stdout != want {
 		t.Errorf("got:\n%s\nwant:\n%s", r.stdout, want)
+	}
+}
+
+func TestRunJSONSchema(t *testing.T) {
+	orig := isTerminal
+	isTerminal = func(io.Writer) bool { return true } // schemas are never colored
+	t.Cleanup(func() { isTerminal = orig })
+
+	r := runWith(t, "", "--json-schema", "testdata/users.json")
+	if r.code != 0 || r.stderr != "" {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if strings.Contains(r.stdout, "\x1b[") {
+		t.Errorf("schema contains color escapes:\n%s", r.stdout)
+	}
+	var schema struct {
+		Schema string `json:"$schema"`
+		Type   string `json:"type"`
+		Items  struct {
+			Properties map[string]struct {
+				Type any `json:"type"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &schema); err != nil {
+		t.Fatalf("%v\n%s", err, r.stdout)
+	}
+	if schema.Schema != "https://json-schema.org/draft/2020-12/schema" || schema.Type != "array" {
+		t.Errorf("$schema %q, type %q", schema.Schema, schema.Type)
+	}
+	if got := strings.Join(schema.Items.Required, ","); got != "id,name,email,tags,owner,score" {
+		t.Errorf("required = %s", got)
+	}
+	if got := fmt.Sprint(schema.Items.Properties["email"].Type); got != "[string null]" {
+		t.Errorf("email type = %s", got)
 	}
 }

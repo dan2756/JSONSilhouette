@@ -48,15 +48,16 @@ curl -s https://example.com/api/users | jsonshape
 
 ## Flags
 
-| Flag          | Meaning                                                  |
-|---------------|----------------------------------------------------------|
-| `--depth N`   | show N levels of nesting, collapse deeper ones to `{…}`  |
-| `--paths`     | flattened output, one path per line                      |
-| `--counts`    | note how many samples had each key and each type         |
-| `--lines`     | read NDJSON: one value per line, all merged              |
-| `--no-color`  | never color the output                                   |
-| `-h, --help`  | show usage                                               |
-| `--version`   | print the version                                        |
+| Flag            | Meaning                                                 |
+|-----------------|---------------------------------------------------------|
+| `--depth N`     | show N levels of nesting, collapse deeper ones to `{…}` |
+| `--paths`       | flattened output, one path per line                     |
+| `--counts`      | note how many samples had each key and each type        |
+| `--json-schema` | print a JSON Schema (draft 2020-12) instead             |
+| `--lines`       | read NDJSON: one value per line, all merged             |
+| `--no-color`    | never color the output                                  |
+| `-h, --help`    | show usage                                              |
+| `--version`     | print the version                                       |
 
 Flags may come before or after the file names; `--` ends the flags.
 
@@ -132,6 +133,39 @@ $ jsonshape --counts users.json
 
 It works with `--paths` as well, and is most useful with `--lines`, where
 the top line says how many records were read.
+
+### JSON Schema
+
+`--json-schema` turns the merged shape into a [JSON Schema](https://json-schema.org/)
+(draft 2020-12) that every sample satisfies: a starting point for
+validation or for code generators.
+
+```sh
+$ jsonshape --json-schema users.json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "integer"
+      },
+      "email": {
+        "type": ["string", "null"]
+      },
+      ...
+    },
+    "required": ["id", "name", "email", "tags", "owner", "score"]
+  }
+}
+```
+
+Keys present in every object are `required`; properties keep the order
+of the input. Unions become a list of types in one schema, ints mixed with
+floats become `"number"`, and arrays that were always empty get no
+`items`. `--depth` limits how far the schema goes; `--paths` and
+`--counts` do not apply.
 
 ### NDJSON
 

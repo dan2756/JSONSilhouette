@@ -29,6 +29,8 @@ Flags:
       --depth N   show N levels of nesting; deeper ones collapse to {…} / […]
       --paths     print one path per line, e.g. ".[].owner.login  string"
       --counts    note how many samples had each key and each type
+      --json-schema
+                  print a JSON Schema (draft 2020-12) for the merged shape
       --lines     read NDJSON: every line is a JSON value, all merged
       --no-color  never color the output (also when NO_COLOR is set)
   -h, --help      show this help
@@ -53,6 +55,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	depth := fs.Int("depth", 0, "")
 	paths := fs.Bool("paths", false, "")
 	counts := fs.Bool("counts", false, "")
+	jsonSchema := fs.Bool("json-schema", false, "")
 	files, err := parseArgs(fs, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -67,6 +70,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if *depth < 0 {
 		return usageError(stderr, fmt.Sprintf("invalid --depth %d: must be at least 1, or 0 for no limit", *depth))
+	}
+	if *jsonSchema && (*paths || *counts) {
+		return usageError(stderr, "--json-schema cannot be combined with --paths or --counts")
 	}
 	if len(files) == 0 {
 		files = []string{"-"}
@@ -94,8 +100,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Color:  useColor(stdout, *noColor),
 	}
 	render := shape.Render
-	if *paths {
+	switch {
+	case *paths:
 		render = shape.RenderPaths
+	case *jsonSchema:
+		render = shape.RenderSchema
 	}
 	if err := render(stdout, root, opts); err != nil {
 		fmt.Fprintf(stderr, "jsonshape: %v\n", err)
