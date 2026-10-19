@@ -13,20 +13,21 @@ const maxPathColumn = 48
 // RenderPaths writes s to w with one line per position: a jq-style path
 // and the type found there.
 //
-//	.                 array
-//	.[]               object
-//	.[].id            int
-//	.[].tags          array
-//	.[].tags[]        string
-//	.[].owner         object
-//	.[].owner.login   string
-//	.[].deleted_at?   string
+//	.                array
+//	.[]              object
+//	.[].id           int
+//	.[].tags         array
+//	.[].tags[]       string
+//	.[].owner        object | null
+//	.[].owner.login  string
+//	.[].deleted_at?  string
 //
 // Keys missing from some objects carry a "?", which keeps the path valid
-// for jq.
+// for jq, and so does the first [] below such a key: jq gives null for a
+// missing key but cannot iterate over it.
 func RenderPaths(w io.Writer, s *Shape, opts Options) error {
 	p := pathRenderer{opts: opts}
-	p.walk(nil, s, 1, samples(s))
+	p.walk(nil, s, 1, samples(s), false)
 
 	col := 0
 	for _, e := range p.entries {
@@ -56,9 +57,11 @@ type pathRenderer struct {
 
 // walk lists the position at path, holding s at the given nesting level,
 // and everything below it. The root's path is empty and printed as ".".
-// first leads the position's --counts note.
-func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string) {
-	e := pathEntry{path: line{segs: path}, typ: typeSummary(s)}
+// first leads the position's --counts note. missing is set when path goes
+// through an optional key, so that jq may give null for it; the [] below
+// is then written []? to skip that null instead of failing on it.
+func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string, missing bool) {
+	e := pathEntry{path: line{segs: path}, typ: typeSummary(s, p.opts.SplitNumbers)}
 	if len(path) == 0 {
 		e.path.add(".", plain)
 	}
@@ -75,7 +78,7 @@ func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string) {
 			if o.Optional(f) {
 				child = append(child, seg{"?", optionalStyle})
 			}
-			p.walk(child, f.Shape, level+1, presence(f.Count, o.Count))
+			p.walk(child, f.Shape, level+1, presence(f.Count, o.Count), missing || o.Optional(f))
 		}
 	}
 	if a := s.Array; a != nil && a.Items.Count > 0 {
@@ -83,7 +86,11 @@ func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string) {
 		if len(path) == 0 {
 			text = ".[]"
 		}
-		p.walk(append(slices.Clip(path), seg{text, plain}), a.Items, level+1, countOf(a.Items.Count, "item"))
+		child := append(slices.Clip(path), seg{text, plain})
+		if missing {
+			child = append(child, seg{"?", optionalStyle})
+		}
+		p.walk(child, a.Items, level+1, countOf(a.Items.Count, "item"), false)
 	}
 }
 
@@ -120,9 +127,9 @@ func isIdent(key string) bool {
 
 // typeSummary names the types in s on one line, with containers written
 // as object and array, or {} and [] when they were always empty.
-func typeSummary(s *Shape) line {
+func typeSummary(s *Shape, splitNumbers bool) line {
 	var l line
-	for i, m := range s.members(false) {
+	for i, m := range s.members(splitNumbers) {
 		if i > 0 {
 			l.add(" | ", plain)
 		}

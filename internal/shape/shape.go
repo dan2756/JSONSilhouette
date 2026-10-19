@@ -57,6 +57,20 @@ type Array struct {
 	Items *Shape
 }
 
+// MaxDepth is how deeply objects and arrays may nest in a value given to
+// Add, the same limit that encoding/json applies. Deeper input would
+// exhaust the stack.
+const MaxDepth = 10000
+
+// DepthError is returned by Add for a value nested deeper than MaxDepth.
+type DepthError struct {
+	Offset int64 // input offset of the first object or array too deep
+}
+
+func (e *DepthError) Error() string {
+	return fmt.Sprintf("nested deeper than %d levels", MaxDepth)
+}
+
 // New returns an empty shape, ready for Add.
 func New() *Shape { return &Shape{} }
 
@@ -69,17 +83,19 @@ func NewDecoder(r io.Reader) *json.Decoder {
 }
 
 // Add reads one JSON value from dec and merges it into s. It returns io.EOF
-// if dec holds no further values, and io.ErrUnexpectedEOF if the input ends
-// in the middle of one.
+// if dec holds no further values, io.ErrUnexpectedEOF if the input ends
+// in the middle of one, and a *DepthError if it nests too deeply.
 func (s *Shape) Add(dec *json.Decoder) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
 	}
-	return s.add(dec, tok)
+	return s.add(dec, tok, 1)
 }
 
-func (s *Shape) add(dec *json.Decoder, tok json.Token) error {
+// add merges the value that starts with tok, at the given nesting level
+// (the top-level value is level 1), into s.
+func (s *Shape) add(dec *json.Decoder, tok json.Token, level int) error {
 	s.Count++
 	switch v := tok.(type) {
 	case nil:
@@ -101,11 +117,14 @@ func (s *Shape) add(dec *json.Decoder, tok json.Token) error {
 			s.Int++
 		}
 	case json.Delim:
+		if level > MaxDepth {
+			return &DepthError{Offset: dec.InputOffset() - 1} // the { or [ just read
+		}
 		switch v {
 		case '{':
-			return s.addObject(dec)
+			return s.addObject(dec, level)
 		case '[':
-			return s.addArray(dec)
+			return s.addArray(dec, level)
 		}
 		return fmt.Errorf("unexpected %q", rune(v))
 	default:
@@ -114,7 +133,7 @@ func (s *Shape) add(dec *json.Decoder, tok json.Token) error {
 	return nil
 }
 
-func (s *Shape) addObject(dec *json.Decoder) error {
+func (s *Shape) addObject(dec *json.Decoder, level int) error {
 	if s.Object == nil {
 		s.Object = &Object{index: make(map[string]*Field)}
 	}
@@ -140,13 +159,13 @@ func (s *Shape) addObject(dec *json.Decoder) error {
 		if tok, err = next(dec); err != nil {
 			return err
 		}
-		if err := f.Shape.add(dec, tok); err != nil {
+		if err := f.Shape.add(dec, tok, level+1); err != nil {
 			return err
 		}
 	}
 }
 
-func (s *Shape) addArray(dec *json.Decoder) error {
+func (s *Shape) addArray(dec *json.Decoder, level int) error {
 	if s.Array == nil {
 		s.Array = &Array{Items: New()}
 	}
@@ -160,7 +179,7 @@ func (s *Shape) addArray(dec *json.Decoder) error {
 		if tok == json.Delim(']') {
 			return nil
 		}
-		if err := a.Items.add(dec, tok); err != nil {
+		if err := a.Items.add(dec, tok, level+1); err != nil {
 			return err
 		}
 	}

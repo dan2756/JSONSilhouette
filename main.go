@@ -22,19 +22,19 @@ files, or stdin when there are none; "-" also means stdin.
 
 Arrays merge the shapes of all their elements; keys missing from some
 elements are marked optional with "?". Ints and floats seen in the same
-place are reported as "number". Several files are merged the same way,
-each one a sample of the same shape.
+place are reported as "number" unless --int is given. Several files are
+merged the same way, each one a sample of the same shape.
 
 Flags:
-      --depth N   show N levels of nesting; deeper ones collapse to {…} / […]
-      --paths     print one path per line, e.g. ".[].owner.login  string"
-      --counts    note how many samples had each key and each type
-      --json-schema
-                  print a JSON Schema (draft 2020-12) for the merged shape
-      --lines     read NDJSON: every line is a JSON value, all merged
-      --no-color  never color the output (also when NO_COLOR is set)
+  --depth N       show N levels of nesting; deeper ones collapse to {…} / […]
+  --paths         print one path per line, e.g. ".[].owner.login  string"
+  --counts        note how many samples had each key and each type
+  --json-schema   print a JSON Schema (draft 2020-12) for the merged shape
+  --lines         read NDJSON: every line is a JSON value, all merged
+  --int           keep int and float apart in unions instead of "number"
+  --no-color      never color the output (also when NO_COLOR is set)
   -h, --help      show this help
-      --version   print the version and exit
+  --version       print the version and exit
 
 Types are colored when stdout is a terminal.
 
@@ -56,6 +56,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	paths := fs.Bool("paths", false, "")
 	counts := fs.Bool("counts", false, "")
 	jsonSchema := fs.Bool("json-schema", false, "")
+	splitNumbers := fs.Bool("int", false, "")
 	files, err := parseArgs(fs, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -95,9 +96,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	opts := shape.Options{
-		Depth:  *depth,
-		Counts: *counts,
-		Color:  useColor(stdout, *noColor),
+		Depth:        *depth,
+		SplitNumbers: *splitNumbers,
+		Counts:       *counts,
+		Color:        useColor(stdout, *noColor),
 	}
 	render := shape.Render
 	switch {
@@ -130,7 +132,7 @@ func readInput(root *shape.Shape, path string, stdin io.Reader, lines bool) erro
 	}
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+		return readError(name, err)
 	}
 	return decodeDocument(root, name, data)
 }

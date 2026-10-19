@@ -85,6 +85,29 @@ func TestDecodeLinesErrors(t *testing.T) {
 	}
 }
 
+func TestByteOrderMark(t *testing.T) {
+	root := shape.New()
+	if err := decodeDocument(root, "x", []byte("\xef\xbb\xbf{\"a\": 1}")); err != nil {
+		t.Fatalf("document: %v", err)
+	}
+	if err := decodeLines(root, "x", strings.NewReader("\xef\xbb\xbf{\"b\": 1}\n{}")); err != nil {
+		t.Fatalf("lines: %v", err)
+	}
+	if root.Count != 3 {
+		t.Errorf("samples = %d, want 3", root.Count)
+	}
+	// Columns are counted from after the mark, as editors show them.
+	err := decodeDocument(shape.New(), "x", []byte("\xef\xbb\xbf[1,]"))
+	if err == nil || !strings.HasPrefix(err.Error(), "x:1:4: ") {
+		t.Errorf("got %v, want an error at 1:4", err)
+	}
+	// Only a mark at the very start is skipped.
+	err = decodeLines(shape.New(), "x", strings.NewReader("{}\n\xef\xbb\xbf{}"))
+	if err == nil || !strings.HasPrefix(err.Error(), "x:2:1: invalid character 'ï'") {
+		t.Errorf("got %v, want an error at 2:1", err)
+	}
+}
+
 func TestDecodeDocumentEmpty(t *testing.T) {
 	for _, in := range []string{"", " \n\t "} {
 		err := decodeDocument(shape.New(), "x", []byte(in))
@@ -123,6 +146,31 @@ func TestErrorContextLongLine(t *testing.T) {
 		"    |                                          ^\n"
 	if got := se.context(); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestErrorContextWideCharacters(t *testing.T) {
+	// The caret goes under the x: two columns along for each wide
+	// character before it, and none for a combining accent.
+	tests := []struct {
+		in    string
+		caret int
+	}{
+		{`{"名前": x}`, 9},
+		{`{"emoji🎉🎉🎉": x}`, 16},
+		{`{"ｆｕｌｌ": x}`, 13},
+		{"{\"e\u0301t\u00e9\": x}", 8},
+	}
+	for _, tt := range tests {
+		err := decodeDocument(shape.New(), "x", []byte(tt.in))
+		var se *syntaxError
+		if !errors.As(err, &se) {
+			t.Fatalf("%s: got %v", tt.in, err)
+		}
+		want := "  1 | " + tt.in + "\n    | " + strings.Repeat(" ", tt.caret) + "^\n"
+		if got := se.context(); got != want {
+			t.Errorf("got:\n%s\nwant:\n%s", got, want)
+		}
 	}
 }
 

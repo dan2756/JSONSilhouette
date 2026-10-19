@@ -42,6 +42,17 @@ func TestRenderPaths(t *testing.T) {
 			".[].a?    object",
 			".[].a?.b  int",
 		}},
+		{"arrays below an optional key skip the missing value", `[{"t": ["a"], "o": {"k": [{"m": [1]}]}}, {}]`, []string{
+			".                array",
+			".[]              object",
+			".[].t?           array",
+			".[].t?[]?        string",
+			".[].o?           object",
+			".[].o?.k         array",
+			".[].o?.k[]?      object",
+			".[].o?.k[]?.m    array",
+			".[].o?.k[]?.m[]  int",
+		}},
 		{"nested arrays", `[[1, 2.5], [null]]`, []string{
 			".      array",
 			".[]    array",

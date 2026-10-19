@@ -15,7 +15,7 @@ const SchemaDialect = "https://json-schema.org/draft/2020-12/schema"
 // object had. Ints and floats together become "number".
 //
 // Only Options.Depth applies: containers below it are described by their
-// type alone.
+// type alone. SplitNumbers has no effect, as every integer is a number.
 func RenderSchema(w io.Writer, s *Shape, opts Options) error {
 	root := append(ordered{{"$schema", SchemaDialect}}, schemaFor(s, 1, opts)...)
 	var b bytes.Buffer

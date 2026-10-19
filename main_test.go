@@ -62,6 +62,8 @@ func TestRunErrors(t *testing.T) {
 		{"trailing data", `{} {}`, nil, 1, "<stdin>:1:4: invalid character '{' after top-level value"},
 		{"error in file", ``, []string{"testdata/bad.json"}, 1, "testdata/bad.json:3:15: invalid character '}'"},
 		{"missing file", ``, []string{"testdata/nope.json"}, 1, "open testdata/nope.json: no such file or directory"},
+		{"directory", ``, []string{"testdata"}, 1, "jsonshape: read testdata: is a directory\n"},
+		{"directory with --lines", ``, []string{"--lines", "testdata"}, 1, "jsonshape: read testdata: is a directory\n"},
 		{"unknown flag", `{}`, []string{"--nope"}, 2, "flag provided but not defined"},
 		{"negative depth", `{}`, []string{"--depth", "-1"}, 2, "invalid --depth -1"},
 		{"bad depth", `{}`, []string{"--depth", "two"}, 2, `invalid value "two" for flag -depth`},
@@ -70,6 +72,7 @@ func TestRunErrors(t *testing.T) {
 		{"empty lines input", "\n\n", []string{"--lines"}, 1, "jsonshape: no JSON input\n"},
 		{"error in second file", `{}`, []string{"-", "testdata/bad.json"}, 1, "testdata/bad.json:3:15:"},
 		{"ndjson without --lines", "{}\n{}\n", nil, 1, "(use --lines for one JSON value per line)"},
+		{"too deeply nested", strings.Repeat("[", 20000), nil, 1, "<stdin>:1:10001: nested deeper than 10000 levels\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -297,5 +300,12 @@ func TestRunJSONSchema(t *testing.T) {
 	}
 	if got := fmt.Sprint(schema.Items.Properties["email"].Type); got != "[string null]" {
 		t.Errorf("email type = %s", got)
+	}
+}
+
+func TestRunInt(t *testing.T) {
+	r := runWith(t, `[{"n": 1}, {"n": 2.5}]`, "--int")
+	if want := "[\n  {\n    n: int | float\n  }\n]\n"; r.code != 0 || r.stdout != want {
+		t.Errorf("exit %d, stderr %q, got:\n%s\nwant:\n%s", r.code, r.stderr, r.stdout, want)
 	}
 }

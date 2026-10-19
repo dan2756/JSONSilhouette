@@ -14,6 +14,10 @@ type Options struct {
 	// deeper ones collapse to {…} and […]. Zero means no limit.
 	Depth int
 
+	// SplitNumbers keeps ints and floats apart in unions, "int | float",
+	// instead of merging them into "number".
+	SplitNumbers bool
+
 	// Counts annotates each line with how many values were seen there:
 	// how many objects had the key, and how many values had each type.
 	Counts bool
@@ -39,7 +43,7 @@ func (o Options) collapsed(level int) bool {
 //	  }
 //	]
 func Render(w io.Writer, s *Shape, opts Options) error {
-	r := renderer{opts: opts}
+	r := renderer{opts: opts, inlined: make(map[*Shape]bool)}
 	r.note(s, 1, samples(s))
 	r.expr(s, 1, 0)
 	r.newline()
@@ -47,9 +51,10 @@ func Render(w io.Writer, s *Shape, opts Options) error {
 }
 
 type renderer struct {
-	opts  Options
-	lines []line
-	cur   line
+	opts    Options
+	lines   []line
+	cur     line
+	inlined map[*Shape]bool // results of inline
 }
 
 func (r *renderer) add(text string, st style) { r.cur.add(text, st) }
@@ -87,7 +92,7 @@ func (r *renderer) indent(n int) {
 // at the current position. Objects and arrays of objects continue over
 // several lines, indented one step past indent.
 func (r *renderer) expr(s *Shape, level, indent int) {
-	for i, m := range s.members(false) {
+	for i, m := range s.members(r.opts.SplitNumbers) {
 		if i > 0 {
 			r.add(" | ", plain)
 		}
@@ -153,17 +158,23 @@ func (r *renderer) array(a *Array, level, indent int) {
 }
 
 // inline reports whether s, a value at the given level, fits on one line:
-// it shows no non-empty object at any depth.
+// it shows no non-empty object at any depth. The answer is remembered, as
+// it is asked again for every level of nested arrays, which would otherwise
+// take quadratic time.
 func (r *renderer) inline(s *Shape, level int) bool {
+	if v, ok := r.inlined[s]; ok {
+		return v
+	}
+	v := true
 	switch {
 	case r.opts.collapsed(level):
-		return true
 	case s.Object != nil && len(s.Object.Fields) > 0:
-		return false
+		v = false
 	case s.Array != nil:
-		return r.inline(s.Array.Items, level+1)
+		v = r.inline(s.Array.Items, level+1)
 	}
-	return true
+	r.inlined[s] = v
+	return v
 }
 
 // displayKey returns k bare when it is made only of letters, digits and a

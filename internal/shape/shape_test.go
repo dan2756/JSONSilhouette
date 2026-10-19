@@ -1,6 +1,7 @@
 package shape
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -178,6 +179,20 @@ func TestAddErrors(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("Add(%q) = %v, want error containing %q", tt.in, err, tt.want)
 		}
+	}
+}
+
+func TestAddDepthLimit(t *testing.T) {
+	ok := strings.Repeat("[", MaxDepth) + strings.Repeat("]", MaxDepth)
+	if err := New().Add(NewDecoder(strings.NewReader(ok))); err != nil {
+		t.Errorf("%d levels: %v", MaxDepth, err)
+	}
+	prefix := `{"a": `
+	deep := prefix + strings.Repeat("[", MaxDepth) + strings.Repeat("]", MaxDepth) + "}"
+	err := New().Add(NewDecoder(strings.NewReader(deep)))
+	var de *DepthError
+	if want := int64(len(prefix) + MaxDepth - 1); !errors.As(err, &de) || de.Offset != want {
+		t.Errorf("%d levels: got %v, want a DepthError at offset %d", MaxDepth+1, err, want)
 	}
 }
 

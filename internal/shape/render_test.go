@@ -130,3 +130,33 @@ func TestNotesStopAtMaxColumn(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+func TestRenderSplitNumbers(t *testing.T) {
+	tests := []struct {
+		in         string
+		merged     string
+		splitApart string
+	}{
+		{`[1, 2]`, "[int]", "[int]"},
+		{`[1.5]`, "[float]", "[float]"},
+		{`[1, 2.5]`, "[number]", "[int | float]"},
+		{`[1, 2.5, "x", null]`, "[number | string | null]", "[int | float | string | null]"},
+	}
+	for _, tt := range tests {
+		s := infer(t, tt.in)
+		if got := render(t, s, Options{}); got != tt.merged+"\n" {
+			t.Errorf("%s: got %q, want %q", tt.in, got, tt.merged)
+		}
+		if got := render(t, s, Options{SplitNumbers: true}); got != tt.splitApart+"\n" {
+			t.Errorf("%s with SplitNumbers: got %q, want %q", tt.in, got, tt.splitApart)
+		}
+	}
+	// --paths follows the same rule; --json-schema always says number.
+	s := infer(t, `{"n": [1, 2.5]}`)
+	if got := renderPaths(t, s, Options{SplitNumbers: true}); !strings.Contains(got, ".n[]  int | float\n") {
+		t.Errorf("paths:\n%s", got)
+	}
+	if got := compactJSON(t, renderSchema(t, s, Options{SplitNumbers: true})); !strings.Contains(got, `"items":{"type":"number"}`) {
+		t.Errorf("schema: %s", got)
+	}
+}
