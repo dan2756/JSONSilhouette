@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
+	"math"
 	"strings"
 )
 
@@ -110,11 +110,11 @@ func (s *Shape) add(dec *json.Decoder, tok json.Token, level int) error {
 		} else {
 			s.Int++
 		}
-	case float64: // decoder without UseNumber
-		if isFloat(strconv.FormatFloat(v, 'g', -1, 64)) {
-			s.Float++
-		} else {
+	case float64: // decoder without UseNumber; the literal is already gone
+		if isWhole(v) {
 			s.Int++
+		} else {
+			s.Float++
 		}
 	case json.Delim:
 		if level > MaxDepth {
@@ -209,6 +209,13 @@ func next(dec *json.Decoder) (json.Token, error) {
 // is an int however large it is.
 func isFloat(lit string) bool {
 	return strings.ContainsAny(lit, ".eE")
+}
+
+// isWhole reports whether v is an integer value. Inf and NaN are not.
+// Used when a decoder has already turned the literal into a float64, so
+// the spelling is gone and FormatFloat would call 1000000 a float.
+func isWhole(v float64) bool {
+	return !math.IsInf(v, 0) && v == math.Trunc(v)
 }
 
 type kind uint8
