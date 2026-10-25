@@ -127,6 +127,23 @@ func TestRenderPathsDepth(t *testing.T) {
 	}
 }
 
+func TestRenderPathsAlignByDisplayWidth(t *testing.T) {
+	// 名前 is two runes and four columns, so the type column lines up
+	// only when the gap is measured in terminal columns.
+	got := renderPaths(t, infer(t, `{"名前": 1, "id": 2}`), Options{})
+	var cols []int
+	for _, line := range strings.Split(strings.TrimSuffix(got, "\n"), "\n") {
+		i := strings.LastIndex(line, " ")
+		if i < 0 {
+			t.Fatalf("no type column in %q\n%s", line, got)
+		}
+		cols = append(cols, DisplayWidth(line[:i]))
+	}
+	if len(cols) != 3 || cols[0] != cols[1] || cols[1] != cols[2] {
+		t.Fatalf("type columns %v\n%s", cols, got)
+	}
+}
+
 func TestRenderPathsLongPathsDoNotPushTheColumn(t *testing.T) {
 	long := strings.Repeat("k", 60)
 	s := infer(t, `{"`+long+`": 1, "a": 2}`)
