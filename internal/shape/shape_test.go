@@ -1,6 +1,7 @@
 package shape
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -157,6 +158,20 @@ func TestCounts(t *testing.T) {
 	}
 	if b.Key != "b" || b.Count != 1 || !o.Optional(b) || b.Shape.Null != 1 {
 		t.Errorf("b: key=%q count=%d optional=%v", b.Key, b.Count, o.Optional(b))
+	}
+}
+
+func TestAddFloat64Decoder(t *testing.T) {
+	// Without UseNumber the literal is gone. Whole numbers are still ints,
+	// including ones FormatFloat would print with an exponent.
+	dec := json.NewDecoder(strings.NewReader(`[1, 1000000, -2, 1.5, 1000000.5]`))
+	s := New()
+	if err := s.Add(dec); err != nil {
+		t.Fatal(err)
+	}
+	items := s.Array.Items
+	if items.Int != 3 || items.Float != 2 {
+		t.Fatalf("int=%d float=%d, want 3 and 2", items.Int, items.Float)
 	}
 }
 
