@@ -97,11 +97,15 @@ $ jsonshape --paths users.json
 .[].deleted_at?       string
 ```
 
-Optional keys keep their `?`, which jq reads as "ignore errors here". jq
-gives null for a missing key but cannot iterate over null, so the first
-`[]` below an optional key gets a `?` too, as in `.[].tags?[]?`. That way
-the paths through optional keys can be pasted into a filter as they are.
-Keys that are not plain identifiers are written as `.["content-type"]`.
+A `?` is jq's "ignore errors here". Optional keys keep one. So does a key of
+a value that is not always an object, because jq will not index a string,
+number, bool, or array: a mix of those and objects is `.[].k?`. jq gives
+null for a missing key, and again for any field of that null, but it cannot
+iterate over null or over a scalar. A `[]` that might land on one of those
+is written `[]?`: `.[].tags?[]?` when `tags` is missing from some objects,
+and `.[].tags[]?` when `tags` is sometimes null. Paths can be pasted into a
+filter as they are. Keys that are not plain identifiers are written as
+`.["content-type"]`.
 
 ### Depth
 

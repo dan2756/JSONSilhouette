@@ -22,9 +22,14 @@ const maxPathColumn = 48
 //	.[].owner.login  string
 //	.[].deleted_at?  string
 //
-// Keys missing from some objects carry a "?", which keeps the path valid
-// for jq, and so does the first [] below such a key: jq gives null for a
-// missing key but cannot iterate over it.
+// A "?" keeps the path valid for jq. Keys missing from some objects get
+// one, and so does a key of a value that is not always an object: jq will
+// not index a string, number, bool, or array, so ["s", {"k": true}] is
+// .[].k?. jq yields null for a missing key and for a field of null, but
+// it cannot iterate over null or a scalar, so a [] that might see one is
+// written []?: .[].tags?[]? when tags is optional, .[].tags[]? when tags
+// is sometimes null. Indexing null does not error, so .[].owner.login is
+// left as it is when owner is null.
 func RenderPaths(w io.Writer, s *Shape, opts Options) error {
 	p := pathRenderer{opts: opts}
 	p.walk(nil, s, 1, samples(s), false)
@@ -57,9 +62,9 @@ type pathRenderer struct {
 
 // walk lists the position at path, holding s at the given nesting level,
 // and everything below it. The root's path is empty and printed as ".".
-// first leads the position's --counts note. missing is set when path goes
-// through an optional key, so that jq may give null for it; the [] below
-// is then written []? to skip that null instead of failing on it.
+// first leads the position's --counts note. missing is set when the path
+// can already be null in jq, so a [] below it is written []? instead of
+// failing on that null.
 func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string, missing bool) {
 	e := pathEntry{path: line{segs: path}, typ: typeSummary(s, p.opts.SplitNumbers)}
 	if len(path) == 0 {
@@ -73,12 +78,17 @@ func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string, missi
 		return
 	}
 	if o := s.Object; o != nil {
+		// .key errors on a string, number, bool, or array. It does not
+		// error on null: the result is null, and a [] below that has to
+		// be []? or jq will stop.
+		unsafeKey := keyAccessMayFail(s)
 		for _, f := range o.Fields {
 			child := childKey(path, f.Key)
-			if o.Optional(f) {
+			if o.Optional(f) || unsafeKey {
 				child = append(child, seg{"?", optionalStyle})
 			}
-			p.walk(child, f.Shape, level+1, presence(f.Count, o.Count), missing || o.Optional(f))
+			childMissing := missing || o.Optional(f) || s.Null > 0
+			p.walk(child, f.Shape, level+1, presence(f.Count, o.Count), childMissing)
 		}
 	}
 	if a := s.Array; a != nil && a.Items.Count > 0 {
@@ -87,11 +97,32 @@ func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string, missi
 			text = ".[]"
 		}
 		child := append(slices.Clip(path), seg{text, plain})
-		if missing {
+		if missing || !jqCanIterate(s) {
 			child = append(child, seg{"?", optionalStyle})
 		}
 		p.walk(child, a.Items, level+1, countOf(a.Items.Count, "item"), false)
 	}
+}
+
+// keyAccessMayFail reports whether jq's .key errors on some value in s.
+// Null and objects are fine; strings, numbers, bools, and arrays are not.
+func keyAccessMayFail(s *Shape) bool {
+	return s.Bool > 0 || s.Int > 0 || s.Float > 0 || s.String > 0 || s.Array != nil
+}
+
+// jqCanIterate reports whether jq's [] accepts every value in s. Arrays
+// and objects both iterate; null and scalars do not.
+func jqCanIterate(s *Shape) bool {
+	ms := s.members(true)
+	if len(ms) == 0 {
+		return false
+	}
+	for _, m := range ms {
+		if m.kind != kindArray && m.kind != kindObject {
+			return false
+		}
+	}
+	return true
 }
 
 // childKey returns the path of key inside the object at path: .key for
