@@ -119,6 +119,23 @@ func TestRenderCountsColor(t *testing.T) {
 	}
 }
 
+func TestCountsAlignByDisplayWidth(t *testing.T) {
+	// 名前 is two runes and four columns. Aligning by runes puts the
+	// notes in different terminal columns.
+	got := render(t, infer(t, `{"名前": "x", "id": 1}`), Options{Counts: true})
+	var cols []int
+	for _, line := range strings.Split(strings.TrimSuffix(got, "\n"), "\n") {
+		i := strings.Index(line, "#")
+		if i < 0 {
+			continue
+		}
+		cols = append(cols, DisplayWidth(line[:i]))
+	}
+	if len(cols) != 2 || cols[0] != cols[1] {
+		t.Fatalf("note columns %v\n%s", cols, got)
+	}
+}
+
 func TestNotesStopAtMaxColumn(t *testing.T) {
 	long := strings.Repeat("k", 80)
 	got := render(t, infer(t, `{"`+long+`": 1, "a": 2}`), Options{Counts: true})

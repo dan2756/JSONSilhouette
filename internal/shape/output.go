@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf8"
+	"unicode"
 )
 
 // style is the color class of a piece of output.
@@ -63,13 +63,56 @@ func (l *line) add(text string, st style) {
 	l.segs = append(l.segs, seg{text, st})
 }
 
-// width is the length of l in characters, ignoring color.
+// width is the length of l in terminal columns, ignoring color.
 func (l *line) width() int {
 	n := 0
 	for _, s := range l.segs {
-		n += utf8.RuneCountInString(s.text)
+		n += DisplayWidth(s.text)
 	}
 	return n
+}
+
+// DisplayWidth reports how many columns s takes up on a terminal: two for
+// each wide character, none for combining marks and invisible format
+// characters, and one for anything else. Error carets and the aligned
+// columns of --counts and --paths both use it.
+func DisplayWidth(s string) int {
+	n := 0
+	for _, r := range s {
+		switch {
+		case unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf):
+		case unicode.Is(wide, r):
+			n += 2
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// wide holds the characters that terminals show two columns wide: the East
+// Asian wide and fullwidth ones and emoji, by block. Symbols elsewhere,
+// which are mostly shown one column wide, are left out.
+var wide = &unicode.RangeTable{
+	R16: []unicode.Range16{
+		{Lo: 0x1100, Hi: 0x115f, Stride: 1}, // Hangul Jamo initial consonants
+		{Lo: 0x2e80, Hi: 0x303e, Stride: 1}, // CJK radicals, symbols and punctuation
+		{Lo: 0x3041, Hi: 0x4dbf, Stride: 1}, // kana, Bopomofo, Hangul Jamo, CJK extension A
+		{Lo: 0x4e00, Hi: 0xa4cf, Stride: 1}, // CJK unified ideographs, Yi
+		{Lo: 0xac00, Hi: 0xd7a3, Stride: 1}, // Hangul syllables
+		{Lo: 0xf900, Hi: 0xfaff, Stride: 1}, // CJK compatibility ideographs
+		{Lo: 0xfe10, Hi: 0xfe19, Stride: 1}, // vertical forms
+		{Lo: 0xfe30, Hi: 0xfe6f, Stride: 1}, // CJK compatibility forms, small forms
+		{Lo: 0xff00, Hi: 0xff60, Stride: 1}, // fullwidth forms
+		{Lo: 0xffe0, Hi: 0xffe6, Stride: 1},
+	},
+	R32: []unicode.Range32{
+		{Lo: 0x1f200, Hi: 0x1f64f, Stride: 1}, // enclosed ideographs, pictographs, emoticons
+		{Lo: 0x1f680, Hi: 0x1f6ff, Stride: 1}, // transport and map symbols
+		{Lo: 0x1f900, Hi: 0x1f9ff, Stride: 1}, // supplemental symbols and pictographs
+		{Lo: 0x1fa70, Hi: 0x1faff, Stride: 1}, // symbols and pictographs extended-A
+		{Lo: 0x20000, Hi: 0x3fffd, Stride: 1}, // CJK extensions B and later
+	},
 }
 
 // Notes start two spaces after the longest line that has one, but no
