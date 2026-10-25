@@ -67,9 +67,40 @@ func TestRenderPaths(t *testing.T) {
 			`.["a b"]["9x"]   int`,
 		}},
 		{"mixed array", `["s", {"k": true}]`, []string{
-			".      array",
-			".[]    string | object",
-			".[].k  bool",
+			".       array",
+			".[]     string | object",
+			".[].k?  bool",
+		}},
+		{"null array is skipped", `[{"tags": ["x"]}, {"tags": null}]`, []string{
+			".            array",
+			".[]          object",
+			".[].tags     array | null",
+			".[].tags[]?  string",
+		}},
+		{"array under a null object", `[{"o": {"a": [1]}}, {"o": null}]`, []string{
+			".           array",
+			".[]         object",
+			".[].o       object | null",
+			".[].o.a     array",
+			".[].o.a[]?  int",
+		}},
+		{"scalar or array", `[[1], "x"]`, []string{
+			".       array",
+			".[]     string | array",
+			".[][]?  int",
+		}},
+		{"null inside an optional array of arrays", `[{"t": [[1], null]}, {}]`, []string{
+			".             array",
+			".[]           object",
+			".[].t?        array",
+			".[].t?[]?     array | null",
+			".[].t?[]?[]?  int",
+		}},
+		{"array or object both iterate", `[[1], {"a": 2}]`, []string{
+			".       array",
+			".[]     array | object",
+			".[].a?  int",
+			".[][]   int",
 		}},
 	}
 	for _, tt := range tests {
@@ -120,11 +151,11 @@ func TestRenderPathsColor(t *testing.T) {
 func TestRenderPathsCounts(t *testing.T) {
 	s := infer(t, `[{"id": 1, "tags": ["x", "y"]}, {"id": "2", "tags": []}, {"tags": null}]`)
 	want := strings.Join([]string{
-		".           array",
-		".[]         object        # 3 items",
-		".[].id?     int | string  # 2/3 · int 1, string 1",
-		".[].tags    array | null  # 3/3 · array 2, null 1",
-		".[].tags[]  string        # 2 items",
+		".            array",
+		".[]          object        # 3 items",
+		".[].id?      int | string  # 2/3 · int 1, string 1",
+		".[].tags     array | null  # 3/3 · array 2, null 1",
+		".[].tags[]?  string        # 2 items",
 	}, "\n") + "\n"
 	if got := renderPaths(t, s, Options{Counts: true}); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
