@@ -102,6 +102,43 @@ func TestRenderPaths(t *testing.T) {
 			".[].a?  int",
 			".[][]   int",
 		}},
+		// [] yields the object's values as well as the array's elements,
+		// so the type is the union even when the two disagree.
+		{"array elements and object values", `[[1], {"a": "s"}]`, []string{
+			".       array",
+			".[]     array | object",
+			".[].a?  string",
+			".[][]   int | string",
+		}},
+		{"empty array still yields object values", `[[], {"a": 1}]`, []string{
+			".       array",
+			".[]     [] | object",
+			".[].a?  int",
+			".[][]   int",
+		}},
+		{"null is skipped but object values remain", `[[1], {"a": "s"}, null]`, []string{
+			".       array",
+			".[]     array | object | null",
+			".[].a?  string",
+			".[][]?  int | string",
+		}},
+		{"nested values from both sides", `[[{"x": 1}], {"a": {"y": true}}]`, []string{
+			".         array",
+			".[]       array | object",
+			".[].a?    object",
+			".[].a?.y  bool",
+			".[][]     object",
+			".[][].x?  int",
+			".[][].y?  bool",
+		}},
+		{"object value that is itself an array", `[[1], {"a": ["s"]}]`, []string{
+			".         array",
+			".[]       array | object",
+			".[].a?    array",
+			".[].a?[]  string",
+			".[][]     int | array",
+			".[][][]?  string",
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -165,6 +202,15 @@ func TestRenderPathsColor(t *testing.T) {
 	}
 }
 
+func TestIndexedValuesDoNotMutate(t *testing.T) {
+	s := infer(t, `[[{"x": 1}], {"a": {"y": true}}, {"a": "s"}]`)
+	before := render(t, s, Options{})
+	_ = renderPaths(t, s, Options{Counts: true})
+	if after := render(t, s, Options{}); after != before {
+		t.Fatalf("RenderPaths mutated the shape:\n%s\nvs\n%s", after, before)
+	}
+}
+
 func TestRenderPathsCounts(t *testing.T) {
 	s := infer(t, `[{"id": 1, "tags": ["x", "y"]}, {"id": "2", "tags": []}, {"tags": null}]`)
 	want := strings.Join([]string{
@@ -176,5 +222,18 @@ func TestRenderPathsCounts(t *testing.T) {
 	}, "\n") + "\n"
 	if got := renderPaths(t, s, Options{Counts: true}); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+
+	// One array element and one object value: [] yields both.
+	s = infer(t, `[{"tags": ["x"]}, {"tags": {"a": 1}}]`)
+	want = strings.Join([]string{
+		".            array",
+		".[]          object          # 2 items",
+		".[].tags     array | object  # 2/2 · array 1, object 1",
+		".[].tags.a?  int             # 1/1",
+		".[].tags[]   int | string    # 2 items · int 1, string 1",
+	}, "\n") + "\n"
+	if got := renderPaths(t, s, Options{Counts: true}); got != want {
+		t.Errorf("mixed:\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }

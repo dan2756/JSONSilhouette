@@ -28,8 +28,10 @@ const maxPathColumn = 48
 // .[].k?. jq yields null for a missing key and for a field of null, but
 // it cannot iterate over null or a scalar, so a [] that might see one is
 // written []?: .[].tags?[]? when tags is optional, .[].tags[]? when tags
-// is sometimes null. Indexing null does not error, so .[].owner.login is
-// left as it is when owner is null.
+// is sometimes null. [] iterates objects as well as arrays, so where a
+// value was both, the type is the union of the array's elements and the
+// object's values: [[1], {"a": "s"}] is .[][] int | string. Indexing null
+// does not error, so .[].owner.login is left as it is when owner is null.
 func RenderPaths(w io.Writer, s *Shape, opts Options) error {
 	p := pathRenderer{opts: opts}
 	p.walk(nil, s, 1, samples(s), false)
@@ -91,16 +93,109 @@ func (p *pathRenderer) walk(path []seg, s *Shape, level int, first string, missi
 			p.walk(child, f.Shape, level+1, presence(f.Count, o.Count), childMissing)
 		}
 	}
-	if a := s.Array; a != nil && a.Items.Count > 0 {
-		text := "[]"
-		if len(path) == 0 {
-			text = ".[]"
+	// [] is only listed when an array was seen here. A pure object is shown
+	// by its keys; once an array is present, the same [] also yields any
+	// object values, and those belong in the type.
+	if s.Array != nil {
+		items := indexedValues(s)
+		if items != nil && items.Count > 0 {
+			text := "[]"
+			if len(path) == 0 {
+				text = ".[]"
+			}
+			child := append(slices.Clip(path), seg{text, plain})
+			if missing || !jqCanIterate(s) {
+				child = append(child, seg{"?", optionalStyle})
+			}
+			p.walk(child, items, level+1, countOf(items.Count, "item"), false)
 		}
-		child := append(slices.Clip(path), seg{text, plain})
-		if missing || !jqCanIterate(s) {
-			child = append(child, seg{"?", optionalStyle})
+	}
+}
+
+// indexedValues is the shape of what jq's [] yields for s: every array
+// element, and every object value, since [] iterates both. Nil when []
+// would yield nothing, including an array that was always empty and an
+// object that never had keys. The original shape is not modified.
+func indexedValues(s *Shape) *Shape {
+	var items *Shape
+	if s.Array != nil && s.Array.Items.Count > 0 {
+		items = s.Array.Items
+	}
+	o := s.Object
+	if o == nil || len(o.Fields) == 0 {
+		return items
+	}
+	if items == nil {
+		items = New()
+	} else {
+		items = items.clone()
+	}
+	for _, f := range o.Fields {
+		items.merge(f.Shape)
+	}
+	if items.Count == 0 {
+		return nil
+	}
+	return items
+}
+
+func (s *Shape) clone() *Shape {
+	c := *s
+	if s.Object != nil {
+		c.Object = s.Object.clone()
+	}
+	if s.Array != nil {
+		c.Array = s.Array.clone()
+	}
+	return &c
+}
+
+func (o *Object) clone() *Object {
+	c := &Object{Count: o.Count, index: make(map[string]*Field, len(o.Fields))}
+	for _, f := range o.Fields {
+		nf := &Field{Key: f.Key, Count: f.Count, Shape: f.Shape.clone()}
+		c.index[nf.Key] = nf
+		c.Fields = append(c.Fields, nf)
+	}
+	return c
+}
+
+func (a *Array) clone() *Array {
+	return &Array{Count: a.Count, Items: a.Items.clone()}
+}
+
+// merge folds o into s. Counts add, and object keys keep the order they
+// first had in s, then in o.
+func (s *Shape) merge(o *Shape) {
+	s.Count += o.Count
+	s.Null += o.Null
+	s.Bool += o.Bool
+	s.Int += o.Int
+	s.Float += o.Float
+	s.String += o.String
+	if o.Object != nil {
+		if s.Object == nil {
+			s.Object = o.Object.clone()
+		} else {
+			s.Object.merge(o.Object)
 		}
-		p.walk(child, a.Items, level+1, countOf(a.Items.Count, "item"), false)
+	}
+	if o.Array != nil {
+		if s.Array == nil {
+			s.Array = o.Array.clone()
+		} else {
+			s.Array.Count += o.Array.Count
+			s.Array.Items.merge(o.Array.Items)
+		}
+	}
+}
+
+func (o *Object) merge(src *Object) {
+	o.Count += src.Count
+	for _, f := range src.Fields {
+		df := o.field(f.Key)
+		df.Count += f.Count
+		df.Shape.merge(f.Shape)
 	}
 }
 
