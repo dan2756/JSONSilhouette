@@ -103,7 +103,9 @@ number, bool, or array: a mix of those and objects is `.[].k?`. jq gives
 null for a missing key, and again for any field of that null, but it cannot
 iterate over null or over a scalar. A `[]` that might land on one of those
 is written `[]?`: `.[].tags?[]?` when `tags` is missing from some objects,
-and `.[].tags[]?` when `tags` is sometimes null. Paths can be pasted into a
+and `.[].tags[]?` when `tags` is sometimes null. `[]` iterates objects too,
+so when a value was both an array and an object the type covers the
+array's elements and the object's values. Paths can be pasted into a
 filter as they are. Keys that are not plain identifiers are written as
 `.["content-type"]`.
 
