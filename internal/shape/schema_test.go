@@ -93,6 +93,27 @@ func TestRenderSchemaTypes(t *testing.T) {
 	}
 }
 
+func TestRenderSchemaBidiKey(t *testing.T) {
+	key := "a\u202eb"
+	got := renderSchema(t, infer(t, `{"`+key+`": 1}`), Options{})
+	if strings.ContainsRune(got, '\u202e') {
+		t.Fatalf("raw bidi in schema:\n%s", got)
+	}
+	var doc struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal([]byte(got), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Properties[key]; !ok {
+		t.Errorf("properties missing %q: %v", key, doc.Properties)
+	}
+	if len(doc.Required) != 1 || doc.Required[0] != key {
+		t.Errorf("required = %#v", doc.Required)
+	}
+}
+
 func TestRenderSchemaDepth(t *testing.T) {
 	got := compactJSON(t, renderSchema(t, infer(t, `{"a": {"b": {"c": 1}}, "l": [[1]]}`), Options{Depth: 2}))
 	want := `{"$schema":"` + SchemaDialect + `","type":"object","properties":{` +

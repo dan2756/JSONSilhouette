@@ -1,6 +1,7 @@
 package shape
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -143,6 +144,75 @@ func TestNotesStopAtMaxColumn(t *testing.T) {
 		"  " + long + ": int  # 1/1\n" +
 		"  a: int" + strings.Repeat(" ", maxNoteColumn+2-len("  a: int")) + "# 1/1\n" +
 		"}\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestDisplayWidthEmoji(t *testing.T) {
+	tests := []struct {
+		in   string
+		want int
+	}{
+		{"id", 2},
+		{"名前", 4},
+		{"🎉", 2},
+		{"👍", 2},
+		{"👍🏽", 2},
+		{"❤", 1},
+		{"❤️", 2},
+		{"🇺🇸", 2},
+		{"👨‍👩‍👧‍👦", 2},
+		{"👨‍⚕️", 2},
+		{"1️⃣", 2},
+		{"a\u200db", 2},
+		{"a\u200d🎉", 3},
+		{"e\u0301", 1},
+		{"ｆ", 2},
+	}
+	for _, tt := range tests {
+		if got := DisplayWidth(tt.in); got != tt.want {
+			t.Errorf("DisplayWidth(%q) = %d, want %d", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestRenderCountsEmojiWidth(t *testing.T) {
+	// A skin-tone emoji and a heart with a variation selector are each two
+	// columns, so the notes land in the same place as for id.
+	for _, key := range []string{"\U0001F44D\U0001F3FD", "\u2764\ufe0f"} {
+		got := render(t, infer(t, `{"`+key+`": 1, "id": 2}`), Options{Counts: true})
+		want := "{\n  \"" + key + "\": int  # 1/1\n  id: int    # 1/1\n}\n"
+		if got != want {
+			t.Errorf("key %q\ngot:\n%s\nwant:\n%s", key, got, want)
+		}
+	}
+}
+
+func TestEscapeBidi(t *testing.T) {
+	for _, r := range []rune{
+		0x061C, 0x200E, 0x200F,
+		0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+		0x2066, 0x2067, 0x2068, 0x2069,
+	} {
+		got := EscapeBidi("a" + string(r) + "b")
+		want := fmt.Sprintf(`a\u%04xb`, r)
+		if got != want {
+			t.Errorf("%U: got %q, want %q", r, got, want)
+		}
+	}
+	if EscapeBidi("abc\u200d\ufe0f") != "abc\u200d\ufe0f" {
+		t.Fatal("joiner or variation selector was escaped")
+	}
+}
+
+func TestRenderBidiKey(t *testing.T) {
+	key := "a\u202eb"
+	got := render(t, infer(t, `{"`+key+`": 1}`), Options{})
+	if strings.ContainsRune(got, '\u202e') {
+		t.Fatalf("raw bidi in output:\n%s", got)
+	}
+	want := "{\n  \"a\\u202eb\": int\n}\n"
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}

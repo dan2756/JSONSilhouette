@@ -74,20 +74,103 @@ func (l *line) width() int {
 
 // DisplayWidth reports how many columns s takes up on a terminal: two for
 // each wide character, none for combining marks and invisible format
-// characters, and one for anything else. Error carets and the aligned
-// columns of --counts and --paths both use it.
+// characters, and one for anything else. A sequence terminals draw as one
+// emoji is two columns: a skin-tone modifier adds nothing, a variation
+// selector widens a narrow emoji base, and a ZWJ sequence does not grow.
+// Error carets and the aligned columns of --counts and --paths both use it.
 func DisplayWidth(s string) int {
 	n := 0
+	wideGrapheme := false
+	join := false
+	var base rune
+	haveBase := false
 	for _, r := range s {
 		switch {
+		case r == 0x200D: // zero-width joiner
+			join = haveBase && (wideGrapheme || emojiLike(base))
+			continue
+		case isEmojiModifier(r), r == 0xFE0E: // skin tone, text presentation
+			continue
+		case r == 0xFE0F, r == 0x20E3: // emoji presentation, keycap
+			if haveBase && !wideGrapheme && (r == 0x20E3 || emojiLike(base)) {
+				n++
+				wideGrapheme = true
+			}
+			continue
 		case unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf):
+			continue
+		case join && emojiLike(r):
+			join = false
+			if !wideGrapheme {
+				n++
+				wideGrapheme = true
+			}
+			base = r
+			haveBase = true
+			continue
 		case unicode.Is(wide, r):
+			join = false
 			n += 2
+			wideGrapheme = true
+			base = r
+			haveBase = true
 		default:
+			join = false
 			n++
+			wideGrapheme = false
+			base = r
+			haveBase = true
 		}
 	}
 	return n
+}
+
+// isEmojiModifier reports whether r is a Fitzpatrick skin-tone modifier.
+// Those sit inside the pictograph block but take no column of their own.
+func isEmojiModifier(r rune) bool {
+	return r >= 0x1F3FB && r <= 0x1F3FF
+}
+
+// EscapeBidi returns s with bidi controls written as \uXXXX. Left raw, they
+// reorder the rest of a terminal line, so a key or an error excerpt can
+// hide the character a caret points at. Variation selectors and joiners
+// are not controls of this kind and are left alone.
+func EscapeBidi(s string) string {
+	if !strings.ContainsFunc(s, isBidiControl) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 6)
+	for _, r := range s {
+		if isBidiControl(r) {
+			fmt.Fprintf(&b, `\u%04x`, r)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func isBidiControl(r rune) bool {
+	switch r {
+	case 0x061C, 0x200E, 0x200F,
+		0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+		0x2066, 0x2067, 0x2068, 0x2069:
+		return true
+	}
+	return false
+}
+
+// emojiLike reports whether r takes part in an emoji sequence. Most
+// pictographs are in wide; the ranges here are text-presentation symbols
+// that become emoji with a variation selector or a joiner.
+func emojiLike(r rune) bool {
+	if isEmojiModifier(r) || unicode.Is(wide, r) {
+		return true
+	}
+	return r >= 0x2300 && r <= 0x23FF ||
+		r >= 0x2600 && r <= 0x27BF ||
+		r >= 0x2B00 && r <= 0x2BFF
 }
 
 // wide holds the characters that terminals show two columns wide: the East

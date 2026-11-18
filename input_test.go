@@ -26,6 +26,10 @@ func TestDecodeDocumentErrors(t *testing.T) {
 		{"truncated trailing value", "[1] \"abc", `x:1:5: invalid character '"' after top-level value (use --lines for one JSON value per line)`},
 		{"columns count characters", "{\"größe\": x}", `x:1:11: invalid character 'x' looking for beginning of value`},
 		{"crlf", "{\r\n\"a\":1,\r\n}", `x:3:1: invalid character '}' looking for beginning of object key string`},
+		// encoding/json quotes the first byte as Latin-1: E2 is 'â', FF is 'ÿ'.
+		{"smart quote", "{\"a\": \u201cx}", "x:1:7: invalid character '\u201c' looking for beginning of value"},
+		{"fullwidth quote", "{\"a\": \uff02x}", "x:1:7: invalid character '\uff02' looking for beginning of value"},
+		{"bad utf-8 byte", "{\"a\": \xff}", `x:1:7: invalid character '\xff' looking for beginning of value`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -101,9 +105,10 @@ func TestByteOrderMark(t *testing.T) {
 	if err == nil || !strings.HasPrefix(err.Error(), "x:1:4: ") {
 		t.Errorf("got %v, want an error at 1:4", err)
 	}
-	// Only a mark at the very start is skipped.
+	// Only a mark at the very start is skipped. The mark is U+FEFF, not the
+	// Latin-1 reading of its first byte.
 	err = decodeLines(shape.New(), "x", strings.NewReader("{}\n\xef\xbb\xbf{}"))
-	if err == nil || !strings.HasPrefix(err.Error(), "x:2:1: invalid character 'ï'") {
+	if err == nil || !strings.HasPrefix(err.Error(), "x:2:1: invalid character '\\ufeff'") {
 		t.Errorf("got %v, want an error at 2:1", err)
 	}
 }
@@ -150,8 +155,8 @@ func TestErrorContextLongLine(t *testing.T) {
 }
 
 func TestErrorContextWideCharacters(t *testing.T) {
-	// The caret goes under the x: two columns along for each wide
-	// character before it, and none for a combining accent.
+	// The caret goes under the x: two columns for a wide character or an
+	// emoji sequence, and none for a combining accent or skin-tone modifier.
 	tests := []struct {
 		in    string
 		caret int
@@ -160,6 +165,9 @@ func TestErrorContextWideCharacters(t *testing.T) {
 		{`{"emoji🎉🎉🎉": x}`, 16},
 		{`{"ｆｕｌｌ": x}`, 13},
 		{"{\"e\u0301t\u00e9\": x}", 8},
+		{"{\"\U0001F44D\U0001F3FD\": x}", 7},
+		{"{\"\u2764\ufe0f\": x}", 7},
+		{"{\"\U0001F468\u200d\U0001F469\u200d\U0001F467\u200d\U0001F466\": x}", 7},
 	}
 	for _, tt := range tests {
 		err := decodeDocument(shape.New(), "x", []byte(tt.in))
@@ -177,5 +185,22 @@ func TestErrorContextWideCharacters(t *testing.T) {
 func TestPrintable(t *testing.T) {
 	if got := printable([]byte("a\tb\xffc")); got != "a b\uFFFDc" {
 		t.Errorf("printable = %q", got)
+	}
+}
+
+func TestErrorContextBidi(t *testing.T) {
+	// U+202E would reverse the excerpt and pull the caret off the x.
+	err := decodeDocument(shape.New(), "x", []byte("{\"a\u202eb\": x}"))
+	var se *syntaxError
+	if !errors.As(err, &se) {
+		t.Fatal(err)
+	}
+	got := se.context()
+	want := "  1 | {\"a\\u202eb\": x}\n    | " + strings.Repeat(" ", 13) + "^\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if strings.ContainsRune(got, '\u202e') {
+		t.Errorf("raw bidi in excerpt:\n%s", got)
 	}
 }
