@@ -26,6 +26,10 @@ func TestDecodeDocumentErrors(t *testing.T) {
 		{"truncated trailing value", "[1] \"abc", `x:1:5: invalid character '"' after top-level value (use --lines for one JSON value per line)`},
 		{"columns count characters", "{\"größe\": x}", `x:1:11: invalid character 'x' looking for beginning of value`},
 		{"crlf", "{\r\n\"a\":1,\r\n}", `x:3:1: invalid character '}' looking for beginning of object key string`},
+		// encoding/json quotes the first byte as Latin-1: E2 is 'â', FF is 'ÿ'.
+		{"smart quote", "{\"a\": \u201cx}", "x:1:7: invalid character '\u201c' looking for beginning of value"},
+		{"fullwidth quote", "{\"a\": \uff02x}", "x:1:7: invalid character '\uff02' looking for beginning of value"},
+		{"bad utf-8 byte", "{\"a\": \xff}", `x:1:7: invalid character '\xff' looking for beginning of value`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -101,9 +105,10 @@ func TestByteOrderMark(t *testing.T) {
 	if err == nil || !strings.HasPrefix(err.Error(), "x:1:4: ") {
 		t.Errorf("got %v, want an error at 1:4", err)
 	}
-	// Only a mark at the very start is skipped.
+	// Only a mark at the very start is skipped. The mark is U+FEFF, not the
+	// Latin-1 reading of its first byte.
 	err = decodeLines(shape.New(), "x", strings.NewReader("{}\n\xef\xbb\xbf{}"))
-	if err == nil || !strings.HasPrefix(err.Error(), "x:2:1: invalid character 'ï'") {
+	if err == nil || !strings.HasPrefix(err.Error(), "x:2:1: invalid character '\\ufeff'") {
 		t.Errorf("got %v, want an error at 2:1", err)
 	}
 }

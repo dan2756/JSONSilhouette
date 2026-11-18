@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -138,10 +139,47 @@ func locate(name string, data []byte, firstLine int, decodeErr error) error {
 	case err != nil:
 		msg = err.Error()
 	}
+	msg = clarifySyntaxMessage(msg, data, off)
 	e := &syntaxError{name: name, msg: msg}
 	e.line, e.col, e.excerpt, e.caret = position(data, off)
 	e.line += firstLine - 1
 	return e
+}
+
+// clarifySyntaxMessage replaces the character encoding/json reports for a
+// non-ASCII byte. The scanner quotes that byte as a Latin-1 rune, so a
+// smart quote (UTF-8 E2 80 9C) is announced as 'â' and a lone 0xFF as 'ÿ'.
+// The byte index is off; the rest of the message, including the column, stays.
+func clarifySyntaxMessage(msg string, data []byte, off int) string {
+	if off < 0 || off >= len(data) || data[off] < utf8.RuneSelf {
+		return msg
+	}
+	old := quoteJSONByte(data[off])
+	const prefix = "invalid character "
+	if !strings.HasPrefix(msg, prefix+old) {
+		return msg
+	}
+	r, size := utf8.DecodeRune(data[off:])
+	var shown string
+	if r == utf8.RuneError && size == 1 {
+		shown = fmt.Sprintf(`'\x%02x'`, data[off])
+	} else {
+		shown = strconv.QuoteRune(r)
+	}
+	return prefix + shown + msg[len(prefix+old):]
+}
+
+// quoteJSONByte matches encoding/json's quoteChar, so the byte it named can
+// be found in the error text and replaced.
+func quoteJSONByte(c byte) string {
+	if c == '\'' {
+		return `'\''`
+	}
+	if c == '"' {
+		return `'"'`
+	}
+	s := strconv.Quote(string(c))
+	return "'" + s[1:len(s)-1] + "'"
 }
 
 // Excerpts keep this many characters before and after the error column.
