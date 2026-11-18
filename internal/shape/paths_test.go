@@ -192,6 +192,19 @@ func TestRenderPathsLongPathsDoNotPushTheColumn(t *testing.T) {
 	}
 }
 
+func TestRenderPathsEmojiWidth(t *testing.T) {
+	// 👍🏽 is two columns, so the type column lines up with .id.
+	key := "\U0001F44D\U0001F3FD"
+	s := infer(t, `{"`+key+`": 1, "id": 2}`)
+	got := renderPaths(t, s, Options{})
+	want := ".        object\n" +
+		".[\"" + key + "\"]  int\n" +
+		".id      int\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestRenderPathsColor(t *testing.T) {
 	s := infer(t, `[{"a": "x"}, {}]`)
 	want := ".       array\n" +

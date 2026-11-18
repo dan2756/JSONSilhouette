@@ -155,8 +155,8 @@ func TestErrorContextLongLine(t *testing.T) {
 }
 
 func TestErrorContextWideCharacters(t *testing.T) {
-	// The caret goes under the x: two columns along for each wide
-	// character before it, and none for a combining accent.
+	// The caret goes under the x: two columns for a wide character or an
+	// emoji sequence, and none for a combining accent or skin-tone modifier.
 	tests := []struct {
 		in    string
 		caret int
@@ -165,6 +165,9 @@ func TestErrorContextWideCharacters(t *testing.T) {
 		{`{"emoji🎉🎉🎉": x}`, 16},
 		{`{"ｆｕｌｌ": x}`, 13},
 		{"{\"e\u0301t\u00e9\": x}", 8},
+		{"{\"\U0001F44D\U0001F3FD\": x}", 7},
+		{"{\"\u2764\ufe0f\": x}", 7},
+		{"{\"\U0001F468\u200d\U0001F469\u200d\U0001F467\u200d\U0001F466\": x}", 7},
 	}
 	for _, tt := range tests {
 		err := decodeDocument(shape.New(), "x", []byte(tt.in))
