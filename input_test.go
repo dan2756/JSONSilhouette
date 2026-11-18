@@ -187,3 +187,20 @@ func TestPrintable(t *testing.T) {
 		t.Errorf("printable = %q", got)
 	}
 }
+
+func TestErrorContextBidi(t *testing.T) {
+	// U+202E would reverse the excerpt and pull the caret off the x.
+	err := decodeDocument(shape.New(), "x", []byte("{\"a\u202eb\": x}"))
+	var se *syntaxError
+	if !errors.As(err, &se) {
+		t.Fatal(err)
+	}
+	got := se.context()
+	want := "  1 | {\"a\\u202eb\": x}\n    | " + strings.Repeat(" ", 13) + "^\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if strings.ContainsRune(got, '\u202e') {
+		t.Errorf("raw bidi in excerpt:\n%s", got)
+	}
+}

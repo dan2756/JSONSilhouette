@@ -221,9 +221,10 @@ func position(data []byte, off int) (line, col int, excerpt string, caret int) {
 	return line, col, before + after, shape.DisplayWidth(before)
 }
 
-// printable returns b as valid UTF-8 with exactly one character per rune
-// of b, so that a caret placed under it lines up: invalid bytes become
-// U+FFFD and tabs and other control characters become spaces.
+// printable returns b as valid UTF-8 that stays on one terminal line, so a
+// caret placed under it lines up: invalid bytes become U+FFFD, tabs and
+// other control characters become spaces, and bidi controls become \uXXXX
+// so they cannot reorder the line.
 func printable(b []byte) string {
 	var sb strings.Builder
 	for len(b) > 0 {
@@ -234,5 +235,5 @@ func printable(b []byte) string {
 		}
 		sb.WriteRune(r)
 	}
-	return sb.String()
+	return shape.EscapeBidi(sb.String())
 }

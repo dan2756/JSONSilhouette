@@ -131,6 +131,36 @@ func isEmojiModifier(r rune) bool {
 	return r >= 0x1F3FB && r <= 0x1F3FF
 }
 
+// EscapeBidi returns s with bidi controls written as \uXXXX. Left raw, they
+// reorder the rest of a terminal line, so a key or an error excerpt can
+// hide the character a caret points at. Variation selectors and joiners
+// are not controls of this kind and are left alone.
+func EscapeBidi(s string) string {
+	if !strings.ContainsFunc(s, isBidiControl) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 6)
+	for _, r := range s {
+		if isBidiControl(r) {
+			fmt.Fprintf(&b, `\u%04x`, r)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func isBidiControl(r rune) bool {
+	switch r {
+	case 0x061C, 0x200E, 0x200F,
+		0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+		0x2066, 0x2067, 0x2068, 0x2069:
+		return true
+	}
+	return false
+}
+
 // emojiLike reports whether r takes part in an emoji sequence. Most
 // pictographs are in wide; the ranges here are text-presentation symbols
 // that become emoji with a variation selector or a joiner.

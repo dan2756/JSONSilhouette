@@ -192,11 +192,12 @@ func displayKey(k string) string {
 }
 
 // quote returns s as a JSON string literal, without the HTML escaping that
-// json.Marshal applies.
+// json.Marshal applies. Bidi controls are written as \uXXXX so the literal
+// cannot reorder the terminal line it is printed on.
 func quote(s string) string {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(s) // encoding a string cannot fail
-	return strings.TrimSuffix(b.String(), "\n")
+	return EscapeBidi(strings.TrimSuffix(b.String(), "\n"))
 }

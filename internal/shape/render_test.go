@@ -1,6 +1,7 @@
 package shape
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -185,6 +186,35 @@ func TestRenderCountsEmojiWidth(t *testing.T) {
 		if got != want {
 			t.Errorf("key %q\ngot:\n%s\nwant:\n%s", key, got, want)
 		}
+	}
+}
+
+func TestEscapeBidi(t *testing.T) {
+	for _, r := range []rune{
+		0x061C, 0x200E, 0x200F,
+		0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+		0x2066, 0x2067, 0x2068, 0x2069,
+	} {
+		got := EscapeBidi("a" + string(r) + "b")
+		want := fmt.Sprintf(`a\u%04xb`, r)
+		if got != want {
+			t.Errorf("%U: got %q, want %q", r, got, want)
+		}
+	}
+	if EscapeBidi("abc\u200d\ufe0f") != "abc\u200d\ufe0f" {
+		t.Fatal("joiner or variation selector was escaped")
+	}
+}
+
+func TestRenderBidiKey(t *testing.T) {
+	key := "a\u202eb"
+	got := render(t, infer(t, `{"`+key+`": 1}`), Options{})
+	if strings.ContainsRune(got, '\u202e') {
+		t.Fatalf("raw bidi in output:\n%s", got)
+	}
+	want := "{\n  \"a\\u202eb\": int\n}\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
 
